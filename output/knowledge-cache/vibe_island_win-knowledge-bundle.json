@@ -1,0 +1,261 @@
+{
+  "generated_at": "2026-04-09T12:50:10.664392+00:00",
+  "original_requirement": "Windows Dynamic Island for AI Coding Agents - Tauri v2 桌面应用，实时监控和管理多个 AI 编程代理（Claude Code, Codex, Cursor等），屏幕顶部浮动面板",
+  "domain": "developer-tools",
+  "keywords": [
+    "windows",
+    "dynamic",
+    "island",
+    "ai",
+    "coding",
+    "agents",
+    "tauri",
+    "v2",
+    "桌面应用",
+    "桌面",
+    "面应",
+    "应用",
+    "实时监控和管理多个",
+    "实时",
+    "时监",
+    "监控"
+  ],
+  "local_knowledge": [],
+  "web_knowledge": [
+    {
+      "source": "web",
+      "title": "GitHub - AnyiWang/OpenCovibe: Local-first desktop app for AI coding ...",
+      "snippet": "Local-first desktop app forAIcodingagents(ClaudeCode,Codex). Built withTauriv2+ Svelte 5. - AnyiWang/OpenCovibe",
+      "link": "https://github.com/AnyiWang/OpenCovibe",
+      "score": 5.0,
+      "evidence_level": "industry",
+      "source_domain": "github.com"
+    },
+    {
+      "source": "web",
+      "title": "Vibe Island - Dynamic Island for Your AI Agents",
+      "snippet": "VibeIsland-DynamicIslandforyourAIagents. Stay in flow whileClaudeCode,Codex,Gemini CLI,Cursor, OpenCode, and Droid keep working. Monitor, approve, and jump back - right from the notch. Stay in flow while youragentskeep w",
+      "link": "https://vibeisland.app/",
+      "score": 4.0,
+      "evidence_level": "community",
+      "source_domain": "vibeisland.app"
+    },
+    {
+      "source": "web",
+      "title": "How I Built a Desktop AI App with Tauri v2 + React 19 in 2026",
+      "snippet": "The technical story behind Locally Uncensored — a standalone desktop app for localAIchat, image, and video generation. CORS proxying in Rust, download managers with pause/resume, auto-discovery of ComfyUI, and everything",
+      "link": "https://dev.to/purpledoubled/how-i-built-a-desktop-ai-app-with-tauri-v2-react-19-in-2026-1g47",
+      "score": 3.0,
+      "evidence_level": "community",
+      "source_domain": "dev.to"
+    },
+    {
+      "source": "web",
+      "title": "Claudia GUI - The Ultimate Visual Interface for Claude Code | AI ...",
+      "snippet": "Claudia GUI is a powerful open-source graphical interface forClaudeCode,offering visual project management, customAIagents, and advancedcodingworkflows. Transform yourAI-assisted development experience.",
+      "link": "https://claudia.so/",
+      "score": 2.0,
+      "evidence_level": "community",
+      "source_domain": "claudia.so"
+    },
+    {
+      "source": "web",
+      "title": "Claude Code by Anthropic | AI Coding Agent, Terminal, IDE",
+      "snippet": "Anthropic's agenticcodingtool fordevelopers.ClaudeCodeunderstands your codebase, edits files, runs commands, and helps you ship faster.",
+      "link": "https://claude.com/product/claude-code",
+      "score": 1.0,
+      "evidence_level": "official",
+      "source_domain": "claude.com"
+    }
+  ],
+  "citations": {
+    "local": [],
+    "web": [
+      {
+        "title": "GitHub - AnyiWang/OpenCovibe: Local-first desktop app for AI coding ...",
+        "source": "web",
+        "link": "https://github.com/AnyiWang/OpenCovibe"
+      },
+      {
+        "title": "Vibe Island - Dynamic Island for Your AI Agents",
+        "source": "web",
+        "link": "https://vibeisland.app/"
+      },
+      {
+        "title": "How I Built a Desktop AI App with Tauri v2 + React 19 in 2026",
+        "source": "web",
+        "link": "https://dev.to/purpledoubled/how-i-built-a-desktop-ai-app-with-tauri-v2-react-19-in-2026-1g47"
+      },
+      {
+        "title": "Claudia GUI - The Ultimate Visual Interface for Claude Code | AI ...",
+        "source": "web",
+        "link": "https://claudia.so/"
+      },
+      {
+        "title": "Claude Code by Anthropic | AI Coding Agent, Terminal, IDE",
+        "source": "web",
+        "link": "https://claude.com/product/claude-code"
+      }
+    ]
+  },
+  "metadata": {
+    "web_enabled": true,
+    "allowed_web_domains": [],
+    "web_stats": {
+      "provider": "ddgs",
+      "raw_count": 5,
+      "filtered_count": 5,
+      "filtered_out_count": 0
+    }
+  },
+  "research_summary": {
+    "benchmark_products": [
+      "GitHub - AnyiWang/OpenCovibe: Local-first desktop app for AI coding ...: Local-first desktop app forAIcodingagents(ClaudeCode,Codex). Built withTauriv2+ Svelte 5. - AnyiWang/OpenCovibe [https://github.com/AnyiWang/OpenCovibe](https://github.com/AnyiWang/OpenCovibe)",
+      "Vibe Island - Dynamic Island for Your AI Agents: VibeIsland-DynamicIslandforyourAIagents. Stay in flow whileClaudeCode,Codex,Gemini CLI,Cursor, OpenCode, and Droid keep working. Monitor, ap [https://vibeisland.app/](https://vibeisland.app/)",
+      "How I Built a Desktop AI App with Tauri v2 + React 19 in 2026: The technical story behind Locally Uncensored — a standalone desktop app for localAIchat, image, and video generation. CORS proxying in Rust [https://dev.to/purpledoubled/how-i-built-a-desktop-ai-app-with-tauri-v2-react-19-in-2026-1g47](https://dev.to/purpledoubled/how-i-built-a-desktop-ai-app-with-tauri-v2-react-19-in-2026-1g47)",
+      "Claudia GUI - The Ultimate Visual Interface for Claude Code | AI ...: Claudia GUI is a powerful open-source graphical interface forClaudeCode,offering visual project management, customAIagents, and advancedcodi [https://claudia.so/](https://claudia.so/)",
+      "Claude Code by Anthropic | AI Coding Agent, Terminal, IDE: Anthropic's agenticcodingtool fordevelopers.ClaudeCodeunderstands your codebase, edits files, runs commands, and helps you ship faster. [https://claude.com/product/claude-code](https://claude.com/product/claude-code)"
+    ],
+    "feature_patterns": [
+      "围绕“windows”建立清晰功能分区、任务入口与状态反馈。",
+      "围绕“dynamic”建立清晰功能分区、任务入口与状态反馈。",
+      "围绕“island”建立清晰功能分区、任务入口与状态反馈。",
+      "围绕“ai”建立清晰功能分区、任务入口与状态反馈。",
+      "GitHub - AnyiWang/OpenCovibe: Local-first desktop app for AI coding ...: Local-first desktop app forAIcodingagents(ClaudeCode,Codex). Built withTauriv2+ Svelte 5. - AnyiWang/OpenCovibe",
+      "Vibe Island - Dynamic Island for Your AI Agents: VibeIsland-DynamicIslandforyourAIagents. Stay in flow whileClaudeCode,Codex,Gemini CLI,Cursor, OpenCode, and Droid keep working. Monitor, ap"
+    ],
+    "interaction_patterns": [
+      "关键任务链路必须具备明确的下一步、完成反馈与可回退路径。",
+      "复杂页面应先给信息架构和优先级，再给具体视觉样式，避免一屏堆满功能。",
+      "列表、详情、编辑、确认四类页面应形成统一的交互骨架，降低学习成本。",
+      "参考 GitHub - AnyiWang/OpenCovibe: Local-first desktop app for AI coding ... 的页面与流程组织方式：Local-first desktop app forAIcodingagents(ClaudeCode,Codex). Built withTauriv2+ Svelte 5. - AnyiWang/OpenCovibe",
+      "参考 Vibe Island - Dynamic Island for Your AI Agents 的页面与流程组织方式：VibeIsland-DynamicIslandforyourAIagents. Stay in flow whileClaudeCode,Codex,Gemini CLI,Cursor, OpenCode, and Droid keep",
+      "参考 How I Built a Desktop AI App with Tauri v2 + React 19 in 2026 的页面与流程组织方式：The technical story behind Locally Uncensored — a standalone desktop app for localAIchat, image, and video generation. C"
+    ],
+    "trust_signals": [
+      "首页或主工作台优先展示价值主张、能力边界、成功案例或关键数据，避免空泛口号。",
+      "涉及数据录入、协作、交易、发布的流程必须提供校验、草稿、撤销或审计提示。",
+      "商业产品页面必须体现加载态、空态、错误态和权限态，而不是只做正常态截图。"
+    ],
+    "differentiation_opportunities": [
+      "把 developer-tools 场景下最关键的任务路径压缩到更少步骤，并用清晰状态机承载流程进度。",
+      "将研究结论沉淀到 PRD / 架构 / UIUX / Spec，确保不是只参考外部产品外观，而是参考其流程与交付标准。",
+      "优先做能体现商业级完成度的能力：权限、审计、异常处理、批量操作、搜索筛选、可观测性。"
+    ],
+    "delivery_recommendations": [
+      "在生成 PRD 前先冻结同类产品研究结论，明确借鉴项、禁用项与差异化方向。",
+      "UI 产出必须先确定设计方向、字体系统、栅格、组件状态矩阵，再开始页面实现。",
+      "实现阶段应先完成信息架构正确的页面框架，再补视觉细节、动效和性能优化。"
+    ],
+    "implementation_options": [
+      {
+        "name": "稳健商业方案",
+        "fit": "企业级交付、审计与可维护优先",
+        "strategy": "组件库标准化 + 证据驱动文档 + 质量门禁",
+        "tradeoff": "前期规范成本较高，但长期稳定"
+      },
+      {
+        "name": "快速验证方案",
+        "fit": "MVP 快速上线、验证 PMF",
+        "strategy": "核心路径最小集 + UI 基础组件复用 + 指标埋点先行",
+        "tradeoff": "视觉深度与扩展性需要二次迭代"
+      },
+      {
+        "name": "品牌差异化方案",
+        "fit": "竞争激烈、强调品牌识别与转化",
+        "strategy": "品牌 token 系统 + 页面叙事结构 + 转化实验框架",
+        "tradeoff": "设计与内容投入更高"
+      }
+    ],
+    "evidence_distribution": {
+      "official": 1,
+      "industry": 1,
+      "community": 3
+    },
+    "primary_sources": [
+      [
+        "github.com",
+        1
+      ],
+      [
+        "vibeisland.app",
+        1
+      ],
+      [
+        "dev.to",
+        1
+      ],
+      [
+        "claudia.so",
+        1
+      ],
+      [
+        "claude.com",
+        1
+      ]
+    ],
+    "competitor_matrix": [
+      {
+        "product": "GitHub - AnyiWang/OpenCovibe: Local-first desktop app for AI coding ...",
+        "capability": "垂直功能",
+        "pricing_signal": "未提及",
+        "trust_signal": "较强",
+        "evidence_level": "industry"
+      },
+      {
+        "product": "Vibe Island - Dynamic Island for Your AI Agents",
+        "capability": "垂直功能",
+        "pricing_signal": "未提及",
+        "trust_signal": "基础",
+        "evidence_level": "community"
+      },
+      {
+        "product": "How I Built a Desktop AI App with Tauri v2 + React 19 in 2026",
+        "capability": "垂直功能",
+        "pricing_signal": "未提及",
+        "trust_signal": "基础",
+        "evidence_level": "community"
+      },
+      {
+        "product": "Claudia GUI - The Ultimate Visual Interface for Claude Code | AI ...",
+        "capability": "工作台/协作",
+        "pricing_signal": "未提及",
+        "trust_signal": "基础",
+        "evidence_level": "community"
+      },
+      {
+        "product": "Claude Code by Anthropic | AI Coding Agent, Terminal, IDE",
+        "capability": "垂直功能",
+        "pricing_signal": "未提及",
+        "trust_signal": "较强",
+        "evidence_level": "official"
+      }
+    ],
+    "research_confidence": "medium"
+  },
+  "knowledge_application_plan": {
+    "hard_constraints": [],
+    "stage_guidance": {},
+    "framework_guidance": {
+      "framework": "Desktop Web Shell",
+      "critical_modules": [
+        "窗口布局、快捷键、托盘、本地文件与 IPC 边界先冻结",
+        "离线缓存和本地能力调用不能按普通 Web 假设实现"
+      ],
+      "validation_surfaces": [
+        "窗口恢复、快捷键、文件系统与离线恢复"
+      ],
+      "delivery_evidence": [
+        "窗口/快捷键/原生桥接清单",
+        "本地文件流与离线恢复验证记录"
+      ]
+    }
+  },
+  "enriched_requirement": "Windows Dynamic Island for AI Coding Agents - Tauri v2 桌面应用，实时监控和管理多个 AI 编程代理（Claude Code, Codex, Cursor等），屏幕顶部浮动面板。请结合以下上下文实现：外部最佳实践: GitHub - AnyiWang/OpenCovibe: Local-first desktop app for AI coding ... - Local-first desktop app forAIcodingagents(ClaudeCode,Codex). Built withTauriv2+ Svelte 5. - AnyiWang/OpenCovibe；外部最佳实践: Vibe Island - Dynamic Island for Your AI Agents - VibeIsland-DynamicIslandforyourAIagents. Stay in flow whileClaudeCode,Codex,Gemini CLI,Cursor, OpenCode, and Droid keep working. Monitor, approve, and jump back - right from the notch. Stay in flow while youragentskeep w；外部最佳实践: How I Built a Desktop AI App with Tauri v2 + React 19 in 2026 - The technical story behind Locally Uncensored — a standalone desktop app for localAIchat, image, and video generation. CORS proxying in Rust, download managers with pause/resume, auto-discovery of ComfyUI, and everything",
+  "knowledge_tracking": {
+    "referenced_files": 0,
+    "domains_hit": []
+  },
+  "cache_signature": "0542ef7e1f4917330c35d87c2141bdf8dcd359c88d1a4ee6653e73760dc20792",
+  "cache_ttl_seconds": 1800
+}

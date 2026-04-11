@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-ssr/
+src-tauri/target/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Dev artifacts
+*.local
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Super Dev / Claude / Cursor workflow state (per-user, not part of source)
+.super-dev/
+.claude/
+.claude-plugin/
+.cursor/
+plugins/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Rust build artifacts
+*.pdb

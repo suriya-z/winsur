@@ -1,0 +1,234 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Vibe Island Win — Nord × Macaron 配色系统
+   Nord 极光冷调底色 + 马卡龙柔和强调色
+   ============================================================ */
+
+:root {
+  /* ---- Nord 极夜底色 (Polar Night) ---- */
+  --nord0: #2e3440;   /* 最深底 */
+  --nord1: #3b4252;   /* 面板背景 */
+  --nord2: #434c5e;   /* 卡片背景 */
+  --nord3: #4c566a;   /* hover / 边框 */
+
+  /* ---- Nord 雪暴亮色 (Snow Storm) ---- */
+  --nord4: #d8dee9;   /* 主文字 */
+  --nord5: #e5e9f0;   /* 亮文字 */
+  --nord6: #eceff4;   /* 最亮 */
+
+  /* ---- 马卡龙强调色 (Macaron Accents) ---- */
+  --macaron-blue: #88c0d0;     /* 冰蓝 — Claude Code */
+  --macaron-mint: #a3be8c;     /* 薄荷绿 — 成功/空闲 */
+  --macaron-lavender: #b48ead; /* 薰衣草 — Codex */
+  --macaron-peach: #d08770;    /* 蜜桃 — Cursor / 警告 */
+  --macaron-cream: #ebcb8b;    /* 奶油黄 — 等待 */
+  --macaron-rose: #bf616a;     /* 玫瑰红 — 错误/拒绝 */
+  --macaron-frost: #81a1c1;    /* 霜蓝 — 主强调 */
+  --macaron-aurora: #8fbcbb;   /* 极光青 — Claude Desktop */
+  --macaron-pink: #c9a0dc;     /* 粉紫 — Antigravity */
+
+  /* ---- 语义色 ---- */
+  --bg-primary: var(--nord0);
+  --bg-secondary: var(--nord1);
+  --bg-hover: var(--nord2);
+  --bg-glass: rgba(46, 52, 64, 0.92);
+  --bg-card: var(--nord1);
+  --bg-card-hover: var(--nord2);
+
+  --text-primary: var(--nord5);
+  --text-secondary: var(--nord4);
+  --text-muted: var(--nord3);
+
+  --accent-blue: var(--macaron-frost);
+  --accent-green: var(--macaron-mint);
+  --accent-yellow: var(--macaron-cream);
+  --accent-red: var(--macaron-rose);
+  --accent-purple: var(--macaron-lavender);
+  --accent-orange: var(--macaron-peach);
+  --accent-cyan: var(--macaron-aurora);
+
+  --status-idle: var(--nord3);
+  --status-thinking: var(--macaron-blue);
+  --status-waiting: var(--macaron-cream);
+  --status-error: var(--macaron-rose);
+
+  --shadow-island:
+    0 0 0 1px rgba(136, 192, 208, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.35),
+    0 0 80px rgba(0, 0, 0, 0.15);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.25);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+
+  --font-sans: "Segoe UI", "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", "Consolas", monospace;
+}
+
+html, body {
+  background: transparent !important;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  background: transparent;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+/* ====== 状态动画 ====== */
+
+@keyframes pulse-thinking {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(136,192,208,0.4); }
+  50% { opacity: 0.6; box-shadow: 0 0 0 4px rgba(136,192,208,0); }
+}
+
+@keyframes breathe-waiting {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@keyframes blink-error {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+@keyframes glow-permission {
+  0%, 100% { box-shadow: var(--shadow-island), 0 0 0 1.5px rgba(235,203,139,0.45); }
+  50% { box-shadow: var(--shadow-island), 0 0 14px 2px rgba(235,203,139,0.2); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.status-dot-thinking { animation: pulse-thinking 1.8s ease-in-out infinite; }
+.status-dot-waiting { animation: breathe-waiting 2.2s ease-in-out infinite; }
+.status-dot-error { animation: blink-error 0.8s ease-in-out infinite; }
+.island-glow-permission { animation: glow-permission 2.5s ease-in-out infinite; }
+
+/* ====== 折叠态紧急动效 ====== */
+
+/* 折叠态权限请求：黄色脉冲 + 左右微摇 */
+@keyframes island-urgent {
+  0%, 100% {
+    box-shadow: 0 0 0 1px rgba(235,203,139,0.4), 0 0 12px rgba(235,203,139,0.15), 0 8px 32px rgba(0,0,0,0.45);
+    transform: translateX(0);
+  }
+  15% { transform: translateX(-2px); }
+  30% { transform: translateX(2px); }
+  45% { transform: translateX(-1px); }
+  60% { transform: translateX(1px); }
+  75% { transform: translateX(0); }
+  50% {
+    box-shadow: 0 0 0 2px rgba(235,203,139,0.6), 0 0 20px rgba(235,203,139,0.25), 0 8px 32px rgba(0,0,0,0.45);
+  }
+}
+.island-urgent { animation: island-urgent 2s ease-in-out infinite; }
+
+/* 折叠态完成通知：绿色闪烁一次 */
+@keyframes island-done-flash {
+  0% { box-shadow: 0 0 0 1px rgba(163,190,140,0.1), 0 8px 32px rgba(0,0,0,0.45); }
+  30% { box-shadow: 0 0 0 3px rgba(163,190,140,0.6), 0 0 24px rgba(163,190,140,0.3), 0 8px 32px rgba(0,0,0,0.45); }
+  100% { box-shadow: 0 0 0 1px rgba(136,192,208,0.1), 0 8px 32px rgba(0,0,0,0.45); }
+}
+.island-done-flash { animation: island-done-flash 1.2s ease-out forwards; }
+
+/* 卡片完成：左侧绿色条闪现 */
+@keyframes card-done-stripe {
+  0% { opacity: 0; width: 0; }
+  30% { opacity: 1; width: 3px; }
+  100% { opacity: 0; width: 3px; }
+}
+
+/* 徽标弹跳 */
+@keyframes badge-bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+}
+.badge-bounce { animation: badge-bounce 0.6s ease-in-out; }
+
+/* ====== shimmer 加载效果 ====== */
+.shimmer-thinking {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(136,192,208,0.05) 40%,
+    rgba(136,192,208,0.10) 50%,
+    rgba(136,192,208,0.05) 60%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2.5s ease-in-out infinite;
+}
+
+/* 权限请求卡片 */
+.card-glow-permission {
+  animation: card-glow 2s ease-in-out infinite;
+}
+@keyframes card-glow {
+  0%, 100% { border-color: rgba(235,203,139,0.3); }
+  50% { border-color: rgba(235,203,139,0.55); box-shadow: 0 0 10px rgba(235,203,139,0.12); }
+}
+
+/* 提问回复卡片 */
+.card-glow-question {
+  animation: card-glow-cyan 2s ease-in-out infinite;
+}
+@keyframes card-glow-cyan {
+  0%, 100% { border-color: rgba(143,188,187,0.3); }
+  50% { border-color: rgba(143,188,187,0.55); box-shadow: 0 0 10px rgba(143,188,187,0.12); }
+}
+
+/* 新 Agent 进入扫光 */
+@keyframes agent-enter-sweep {
+  0% { background-position: -100% 0; }
+  100% { background-position: 200% 0; }
+}
+.agent-enter-sweep {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(216,222,233,0.04) 45%,
+    rgba(216,222,233,0.08) 50%,
+    rgba(216,222,233,0.04) 55%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: agent-enter-sweep 0.8s ease-out forwards;
+}
+
+/* Loader 旋转 */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spin { animation: spin 1s linear infinite; }
+
+/* ====== 拖拽区域 ====== */
+.drag-handle {
+  cursor: grab;
+  -webkit-app-region: drag;
+}
+.drag-handle:active { cursor: grabbing; }
+.no-drag { -webkit-app-region: no-drag; }
+
+/* ====== 滚动条 ====== */
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(216,222,233,0.12); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(216,222,233,0.22); }

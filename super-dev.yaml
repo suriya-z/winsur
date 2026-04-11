@@ -1,0 +1,42 @@
+author: 'wwz'
+backend: rust
+cli: {}
+database: sqlite
+description: 'Windows Dynamic Island for AI Coding Agents - Tauri v2 桌面应用，实时监控和管理多个 AI 编程代理（Claude Code, Codex, Cursor等），屏幕顶部浮动面板'
+domain: 'developer-tools'
+experts:
+- PM
+- ARCHITECT
+- UI
+- UX
+- SECURITY
+- CODE
+frontend: react
+host_compatibility_min_ready_hosts: 1
+host_compatibility_min_score: 80
+host_profile_enforce_selected: false
+host_profile_targets: []
+knowledge_allowed_domains: []
+knowledge_cache_ttl_seconds: 1800
+language_preferences:
+- zh-CN
+- en
+license: MIT
+name: vibe_island_win
+output_dir: output
+phases:
+- discovery
+- intelligence
+- drafting
+- redteam
+- qa
+- delivery
+- deployment
+platform: desktop
+quality_gate: 80
+state_management:
+- zustand
+testing_frameworks:
+- vitest
+- playwright
+version: 2.3.2
