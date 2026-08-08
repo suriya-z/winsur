@@ -1,6 +1,6 @@
 Add-Type -AssemblyName System.Drawing
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$srcPath = Join-Path $root "src-tauri\icons\128x128.png"
+$srcPath = Join-Path $root "assets\icons\128x128.png"
 $outDir = Join-Path $root "build"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 $outPng = Join-Path $outDir "icon.png"

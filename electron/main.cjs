@@ -138,7 +138,7 @@ function createWindow() {
 
 function createTray() {
   let icon;
-  const iconPath = path.join(__dirname, "..", "src-tauri", "icons", "32x32.png");
+  const iconPath = path.join(__dirname, "..", "assets", "icons", "32x32.png");
   try {
     icon = nativeImage.createFromPath(iconPath);
     if (icon.isEmpty()) throw new Error("empty");

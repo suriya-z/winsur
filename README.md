@@ -5,16 +5,9 @@ Run AI coding agents in the background; get interrupted only when they need you.
 
 Inspired by [Vibe Island](https://vibeisland.app) (macOS). Built for Windows with Electron.
 
-## Path
-
-```
-C:\Users\acer\Winsur
-```
-
 ## Quick start
 
 ```powershell
-cd C:\Users\acer\Winsur
 npm install
 npm start
 ```
@@ -22,14 +15,13 @@ npm start
 ## Desktop app
 
 ```powershell
-cd C:\Users\acer\Winsur
 npm run dist
 ```
 
 Output in `release\`:
 
-- `Winsur-Setup-0.1.0.exe`
-- `Winsur-Portable-0.1.0.exe`
+- `Winsur-Setup-0.1.1.exe`
+- `Winsur-Portable-0.1.1.exe`
 
 ## Commands
 
@@ -48,11 +40,24 @@ Output in `release\`:
 - Sound alerts, usage panel, SSH reverse tunnels
 - Fully local — hook server on `127.0.0.1:18900`
 
+## Permissions
+
+`Bash`, `Write`, `Edit` and `NotebookEdit` are held until you answer;
+the agent waits up to 5 minutes, then denies. Everything else is
+reported for display and falls through to the agent's own permission
+prompt.
+
+Holding a tool call requires knowing how a given agent reads a hook's
+decision, so gating is currently enabled for Claude Code only. Other
+agents show activity, questions and plans, but Winsur does not decide
+for them. To gate another host, add it in `electron/hooks.cjs`
+(`GATED_TOOLS`, and the `gate` flag in `installAllHooks`).
+
 ## Config
 
 | Path | Role |
 |------|------|
-| `C:\Users\acer\Winsur\hooks\` | Hook scripts (source of truth) |
+| `hooks\` | Hook scripts (source of truth) |
 | `~/.winsur\` | Settings, SSH remotes |
 | `~/.grok\hooks\winsur.json` | Generated Grok hooks |
 

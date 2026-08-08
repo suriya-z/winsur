@@ -37,35 +37,24 @@ function createHookServer(callbacks) {
 
   function sendJson(res, status, obj) {
     const body = JSON.stringify(obj);
-    res.writeHead(status, {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    });
+    res.writeHead(status, { "Content-Type": "application/json" });
     res.end(body);
   }
 
   const server = http.createServer(async (req, res) => {
-    // CORS preflight
-    if (req.method === "OPTIONS") {
-      res.writeHead(204, {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-      });
-      return res.end();
-    }
-
+    // No CORS headers anywhere in here on purpose. Every real client is a
+    // native HTTP caller (hook scripts, the agent's own http hook) that
+    // ignores CORS, so allowing browser origins only lets any page you visit
+    // read your open folders and pending prompts off localhost.
     const url = req.url || "/";
 
     if (req.method === "GET" && url === "/health") {
-      res.writeHead(200, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
+      res.writeHead(200, { "Content-Type": "text/plain" });
       return res.end("Winsur Hook Server OK");
     }
 
     if (req.method === "GET" && url === "/debug/events") {
-      res.writeHead(200, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
+      res.writeHead(200, { "Content-Type": "text/plain" });
       return res.end(
         recentEvents.length
           ? recentEvents.join("\n")
