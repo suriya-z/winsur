@@ -7,7 +7,7 @@ import { create } from "zustand";
 import type { AgentSession } from "../types/agent";
 
 /** 通知类型 */
-export type NotifyType = "permission" | "done" | "question" | null;
+export type NotifyType = "permission" | "done" | "question" | "plan" | null;
 
 interface AgentStore {
   agents: AgentSession[];
@@ -27,11 +27,24 @@ interface AgentStore {
   clearNotify: () => void;
 }
 
+/** Only things that REQUIRE user action (not optional free-chat). */
 function checkPending(agents: AgentSession[]) {
   const hasPerm = agents.some((a) => a.pending_permission != null);
   const hasQuestion = agents.some((a) => a.pending_question != null);
-  const count = agents.filter((a) => a.pending_permission != null || a.pending_question != null).length;
-  return { hasPerm, hasQuestion, hasAny: hasPerm || hasQuestion, count };
+  const hasPlan = agents.some((a) => a.pending_plan != null);
+  const count = agents.filter(
+    (a) =>
+      a.pending_permission != null ||
+      a.pending_question != null ||
+      a.pending_plan != null
+  ).length;
+  return {
+    hasPerm,
+    hasQuestion,
+    hasPlan,
+    hasAny: hasPerm || hasQuestion || hasPlan,
+    count,
+  };
 }
 
 export const useAgentStore = create<AgentStore>((set) => ({
@@ -44,28 +57,63 @@ export const useAgentStore = create<AgentStore>((set) => ({
 
   updateAgent: (agent) =>
     set((state) => {
-      const existing = state.agents.findIndex((a) => a.id === agent.id);
+      const norm = (c: string) =>
+        String(c || "")
+          .replace(/\//g, "\\")
+          .replace(/\\+$/, "")
+          .toLowerCase();
+      const sameCard = (a: AgentSession, b: AgentSession) =>
+        a.id === b.id ||
+        (a.agent_type === b.agent_type &&
+          norm(a.cwd) === norm(b.cwd) &&
+          (a.remote_host || "") === (b.remote_host || ""));
+
+      const existing = state.agents.findIndex((a) => sameCard(a, agent));
       const oldAgent = existing >= 0 ? state.agents[existing] : null;
       let newAgents: AgentSession[];
       if (existing >= 0) {
         newAgents = [...state.agents];
-        newAgents[existing] = agent;
+        // Keep stable id for UI keys when merging
+        newAgents[existing] = { ...agent, id: newAgents[existing].id };
       } else {
         newAgents = [...state.agents, agent];
       }
+      // Drop any other duplicates of this card
+      newAgents = newAgents.filter(
+        (a, i) => newAgents.findIndex((b) => sameCard(a, b)) === i
+      );
 
       const { hasPerm, hasAny, count } = checkPending(newAgents);
       const wasPending = state.hasAnyPending;
 
-      // 判断通知类型
+      // Only expand / urgent for real required action — never for free-chat / idle
       let notify: NotifyType = state.notify;
       if (agent.pending_permission != null && oldAgent?.pending_permission == null) {
-        notify = "permission"; // 新权限请求
-      } else if (agent.pending_question != null && oldAgent?.pending_question == null) {
-        notify = "question"; // 新提问
-      } else if (agent.status === "idle" && oldAgent && oldAgent.status !== "idle" && oldAgent.status !== "disconnected") {
-        notify = "done"; // 刚完成
+        notify = "permission";
+      } else if (
+        agent.pending_plan != null &&
+        oldAgent?.pending_plan == null &&
+        agent.status === "waiting"
+      ) {
+        notify = "plan";
+      } else if (
+        agent.pending_question != null &&
+        oldAgent?.pending_question == null &&
+        agent.status === "waiting"
+      ) {
+        notify = "question";
+      } else if (
+        agent.status === "idle" &&
+        oldAgent &&
+        oldAgent.status !== "idle" &&
+        oldAgent.status !== "disconnected"
+      ) {
+        notify = "done";
       }
+
+      // Auto-expand only on permission or required question — not on "done"
+      const shouldExpand = hasAny;
+      const shouldCollapse = wasPending && !hasAny;
 
       return {
         agents: newAgents,
@@ -73,7 +121,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
         hasAnyPending: hasAny,
         attentionCount: count,
         notify,
-        isExpanded: hasAny ? true : (wasPending && !hasAny) ? false : state.isExpanded,
+        isExpanded: shouldExpand ? true : shouldCollapse ? false : state.isExpanded,
       };
     }),
 

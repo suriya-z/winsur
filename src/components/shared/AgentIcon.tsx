@@ -103,6 +103,16 @@ export function AgentIcon({ type, size = 14, color = "#fff" }: AgentIconProps) {
         </svg>
       );
 
+    // Grok Build: stylized "G" / spark
+    case "grok-build":
+      return (
+        <svg width={s} height={s} viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="5.5" stroke={color} strokeWidth="1.5" />
+          <path d="M10.5 8H8V5.5" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M11 3.5L12 2" stroke={color} strokeWidth="1.2" strokeLinecap="round" opacity="0.7" />
+        </svg>
+      );
+
     // 默认: 方块
     default:
       return (
@@ -115,21 +125,39 @@ export function AgentIcon({ type, size = 14, color = "#fff" }: AgentIconProps) {
   }
 }
 
-/** 获取 Agent 宿主的配色（Nord 马卡龙色） */
+/** Agent accent colors — muted zinc palette, readable on near-black */
 export function getAgentColor(type: AgentType): string {
   const colors: Record<AgentType, string> = {
-    "claude-code": "#88c0d0",    // 冰蓝
-    codex: "#b48ead",            // 薰衣草
-    cursor: "#d08770",           // 蜜桃
-    antigravity: "#c9a0dc",      // 粉紫
-    "claude-desktop": "#8fbcbb", // 极光青
-    opencode: "#a3be8c",         // 薄荷绿
-    "qwen-code": "#81a1c1",     // 霜蓝
-    "code-buddy": "#ebcb8b",    // 奶油
-    windsurf: "#bf616a",        // 玫瑰
-    unknown: "#4c566a",          // Nord 灰
+    "claude-code": "#d4a574",
+    codex: "#c4b5fd",
+    cursor: "#94a3b8",
+    antigravity: "#a78bfa",
+    "claude-desktop": "#a8a29e",
+    opencode: "#86efac",
+    "qwen-code": "#7dd3fc",
+    "code-buddy": "#fcd34d",
+    windsurf: "#fca5a5",
+    "grok-build": "#e4e4e7",
+    gemini: "#60a5fa",
+    zcode: "#c4b5fd",
+    trae: "#f472b6",
+    mimocode: "#34d399",
+    droid: "#fb923c",
+    qoder: "#a3e635",
+    kimi: "#22d3ee",
+    deepseek: "#818cf8",
+    mistral: "#f97316",
+    copilot: "#94a3b8",
+    workbuddy: "#eab308",
+    kiro: "#e879f9",
+    hermes: "#2dd4bf",
+    amp: "#f43f5e",
+    "pi-agent": "#a78bfa",
+    "oh-my-pi": "#c084fc",
+    gajae: "#4ade80",
+    unknown: "#71717a",
   };
-  return colors[type] || "#4c566a";
+  return colors[type] || "#71717a";
 }
 
 /** 获取 Agent 宿主的显示名称 */
@@ -144,6 +172,24 @@ export function getAgentLabel(type: AgentType): string {
     "qwen-code": "Qwen",
     "code-buddy": "CodeBuddy",
     windsurf: "Windsurf",
+    "grok-build": "Grok Build",
+    gemini: "Gemini",
+    zcode: "ZCode",
+    trae: "Trae",
+    mimocode: "MiMo",
+    droid: "Droid",
+    qoder: "Qoder",
+    kimi: "Kimi",
+    deepseek: "DeepSeek",
+    mistral: "Mistral",
+    copilot: "Copilot",
+    workbuddy: "WorkBuddy",
+    kiro: "Kiro",
+    hermes: "Hermes",
+    amp: "Amp",
+    "pi-agent": "Pi",
+    "oh-my-pi": "Oh My Pi",
+    gajae: "Gajae",
     unknown: "Agent",
   };
   return labels[type] || "Agent";

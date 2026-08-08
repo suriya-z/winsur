@@ -17,14 +17,15 @@ interface AllHookStatus {
 }
 
 const HOST_CONFIG: { key: string; label: string; color: string }[] = [
-  { key: "claude_code", label: "Claude Code", color: "#88c0d0" },
-  { key: "codex_cli", label: "Codex", color: "#b48ead" },
-  { key: "claude_desktop", label: "Claude Desktop", color: "#8fbcbb" },
-  { key: "antigravity", label: "Antigravity", color: "#c9a0dc" },
-  { key: "opencode", label: "OpenCode", color: "#a3be8c" },
-  { key: "qwen_code", label: "Qwen Code", color: "#81a1c1" },
-  { key: "codebuddy", label: "CodeBuddy", color: "#ebcb8b" },
-  { key: "windsurf", label: "Windsurf", color: "#88c0d0" },
+  { key: "grok_build", label: "Grok Build", color: "#e4e4e7" },
+  { key: "claude_code", label: "Claude Code", color: "#d4a574" },
+  { key: "codex_cli", label: "Codex", color: "#c4b5fd" },
+  { key: "claude_desktop", label: "Claude Desktop", color: "#a8a29e" },
+  { key: "antigravity", label: "Antigravity", color: "#a78bfa" },
+  { key: "opencode", label: "OpenCode", color: "#86efac" },
+  { key: "qwen_code", label: "Qwen Code", color: "#7dd3fc" },
+  { key: "codebuddy", label: "CodeBuddy", color: "#fcd34d" },
+  { key: "windsurf", label: "Windsurf", color: "#fca5a5" },
 ];
 
 export function HookSettings() {
@@ -85,7 +86,7 @@ export function HookSettings() {
             alignItems: "center",
             gap: 5,
             fontSize: 10.5,
-            color: "#999",
+            color: "var(--text-muted)",
             background: "transparent",
             border: "none",
             cursor: "pointer",
@@ -94,7 +95,7 @@ export function HookSettings() {
             textAlign: "left",
           }}
         >
-          <span style={{ color: installed > 0 ? "#4ade80" : "#eab308" }}>
+          <span style={{ color: installed > 0 ? "var(--accent-green)" : "var(--accent-yellow)" }}>
             {installed > 0 ? `${installed} connected` : detected > 0 ? `${detected} detected` : "No agents"}
           </span>
           <span style={{ opacity: 0.4 }}>/</span>
@@ -119,9 +120,9 @@ export function HookSettings() {
           style={{
             padding: "4px 10px",
             borderRadius: 6,
-            border: "1px solid #2a3a2a",
-            background: "#121f12",
-            color: "#4ade80",
+            border: "1px solid var(--border-default)",
+            background: "var(--bg-elevated)",
+            color: "var(--text-primary)",
             fontSize: 10,
             fontWeight: 600,
             cursor: loading ? "wait" : "pointer",
@@ -135,7 +136,7 @@ export function HookSettings() {
           Install
         </motion.button>
 
-        {/* Uninstall 按钮 */}
+        {/* Uninstall */}
         <motion.button
           className="no-drag"
           whileHover={{ scale: 1.04 }}
@@ -145,9 +146,9 @@ export function HookSettings() {
           style={{
             padding: "4px 6px",
             borderRadius: 6,
-            border: "1px solid #2a2020",
-            background: "#1f1212",
-            color: "#f87171",
+            border: "1px solid var(--border-subtle)",
+            background: "var(--bg-card)",
+            color: "var(--accent-red)",
             fontSize: 10,
             cursor: loading ? "wait" : "pointer",
             display: "flex",
@@ -180,7 +181,7 @@ export function HookSettings() {
                 const detected = h?.detected ?? false;
                 const installed = h?.installed ?? false;
                 // 检测到的用宿主自身颜色，未检测到的灰色
-                const displayColor = !detected ? "#4c566a" : hostColor;
+                const displayColor = !detected ? "#52525b" : hostColor;
                 const opacity = !detected ? 0.4 : installed ? 1 : 0.7;
                 const Icon = !detected ? XCircle : installed ? CheckCircle : AlertCircle;
                 return (
@@ -213,7 +214,7 @@ export function HookSettings() {
       {message && (
         <div style={{
           fontSize: 9,
-          color: "#777",
+          color: "var(--text-muted)",
           marginTop: 4,
           padding: "2px 6px",
           background: "rgba(255,255,255,0.03)",

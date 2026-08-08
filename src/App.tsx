@@ -1,5 +1,4 @@
-// Vibe Island Win - 应用主入口
-// 灵动岛浮动面板，实时监控 AI 编程代理
+// Winsur — multi-agent control surface
 
 import { IslandContainer } from "./components/Island/IslandContainer";
 import { useAgentEvents } from "./hooks/useAgentEvents";
