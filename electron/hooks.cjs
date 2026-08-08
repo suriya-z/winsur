@@ -5,6 +5,26 @@ const path = require("path");
 const { getAgentRegistry } = require("./agents-registry.cjs");
 
 const HOOK_URL = "http://127.0.0.1:18900/hooks/event";
+const PERMISSION_URL = "http://127.0.0.1:18900/hooks/permission";
+
+/**
+ * Tools held for explicit Allow/Deny in Winsur. Exact-match list (letters +
+ * "|" only), so "Edit" will not silently also catch "NotebookEdit".
+ */
+const GATED_TOOLS = "Bash|Write|Edit|NotebookEdit";
+
+/** Must outlast SessionManager.waitPermission (300s) or the agent gives up first. */
+const PERMISSION_TIMEOUT_SEC = 310;
+const EVENT_TIMEOUT_SEC = 5;
+
+const HOOK_EVENTS = [
+  "PreToolUse",
+  "PostToolUse",
+  "Notification",
+  "Stop",
+  "SessionStart",
+  "SessionEnd",
+];
 
 function getAgentHosts() {
   return getAgentRegistry().map((a) => ({
@@ -58,24 +78,68 @@ function hookCommand(scriptPath, eventName) {
   return `powershell -ExecutionPolicy Bypass -NoProfile -File "${scriptPath}" ${eventName}`;
 }
 
-function buildHttpHooks() {
-  return {
-    PreToolUse: [{ type: "http", url: HOOK_URL, timeout: 5 }],
-    PostToolUse: [{ type: "http", url: HOOK_URL, timeout: 5 }],
-    Notification: [{ type: "http", url: HOOK_URL, timeout: 5 }],
-    Stop: [{ type: "http", url: HOOK_URL, timeout: 5 }],
-    SessionStart: [{ type: "http", url: HOOK_URL, timeout: 5 }],
-    SessionEnd: [{ type: "http", url: HOOK_URL, timeout: 5 }],
-  };
+/**
+ * Hook config nests event -> matcher group -> handlers. Writing handlers
+ * straight into the event array (as builds before this did) parses as an
+ * invalid matcher group and the hooks never fire.
+ *
+ * @param {boolean} gate  Hold GATED_TOOLS at the blocking permission endpoint.
+ */
+function buildHttpHooks(gate) {
+  const relay = { type: "http", url: HOOK_URL, timeout: EVENT_TIMEOUT_SEC };
+  const hooks = {};
+  for (const e of HOOK_EVENTS) {
+    hooks[e] = [{ hooks: [{ ...relay }] }];
+  }
+  if (gate) {
+    // Runs alongside the relay group; the relay reports activity, this one decides.
+    hooks.PreToolUse.unshift({
+      matcher: GATED_TOOLS,
+      hooks: [{ type: "http", url: PERMISSION_URL, timeout: PERMISSION_TIMEOUT_SEC }],
+    });
+  }
+  return hooks;
 }
 
 function buildCommandHooks(scriptPath) {
-  const ev = ["PreToolUse", "PostToolUse", "Notification", "Stop", "SessionStart", "SessionEnd"];
   const hooks = {};
-  for (const e of ev) {
-    hooks[e] = [{ type: "command", command: hookCommand(scriptPath, e) }];
+  for (const e of HOOK_EVENTS) {
+    hooks[e] = [{ hooks: [{ type: "command", command: hookCommand(scriptPath, e) }] }];
   }
   return hooks;
+}
+
+/** True for a handler this app installed (any generation of it). */
+function isWinsurHandler(handler) {
+  const cmd = String(handler?.command || "");
+  const url = String(handler?.url || "");
+  return (
+    cmd.includes("vibe-island") ||
+    cmd.includes("winsur-hook") ||
+    url.includes("18900")
+  );
+}
+
+/**
+ * Remove previously installed Winsur handlers, leaving the user's own hooks
+ * untouched. Handles both the current nested shape and the flat handlers
+ * older builds wrote — without this, autoInstallOnLaunch duplicates hooks
+ * on every start.
+ */
+function stripWinsurHooks(groups) {
+  if (!Array.isArray(groups)) return [];
+  const out = [];
+  for (const group of groups) {
+    if (!group || typeof group !== "object") continue;
+    if (!Array.isArray(group.hooks)) {
+      // Flat handler written directly into the event array by an older build.
+      if (!isWinsurHandler(group)) out.push(group);
+      continue;
+    }
+    const kept = group.hooks.filter((h) => !isWinsurHandler(h));
+    if (kept.length) out.push({ ...group, hooks: kept });
+  }
+  return out;
 }
 
 /** Grok: HTTP only — dual HTTP+command double-fires and creates 2 cards */
@@ -150,23 +214,13 @@ function installCursorHooks(configPath, hookScript) {
   // Cursor often uses top-level event keys or hooks object
   const commandHooks = buildCommandHooks(hookScript);
   if (!existing.hooks) existing.hooks = {};
-  for (const [ev, entries] of Object.entries(commandHooks)) {
-    if (!Array.isArray(existing.hooks[ev])) existing.hooks[ev] = [];
-    existing.hooks[ev] = existing.hooks[ev].filter((e) => {
-      const c = e?.command || "";
-      const u = e?.url || "";
-      return (
-        !String(c).includes("vibe-island") &&
-        !String(c).includes("winsur-hook") &&
-        !String(u).includes("18900")
-      );
-    });
-    existing.hooks[ev].push(...entries);
+  for (const [ev, groups] of Object.entries(commandHooks)) {
+    existing.hooks[ev] = [...stripWinsurHooks(existing.hooks[ev]), ...groups];
   }
   fs.writeFileSync(configPath, JSON.stringify(existing, null, 2), "utf8");
 }
 
-function installHooksToConfig(configPath, hookScript, hooksKey, preferHttp) {
+function installHooksToConfig(configPath, hookScript, hooksKey, preferHttp, gate) {
   let settings = {};
   if (fs.existsSync(configPath)) {
     try {
@@ -178,23 +232,13 @@ function installHooksToConfig(configPath, hookScript, hooksKey, preferHttp) {
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
   }
 
-  const hooks = preferHttp ? buildHttpHooks() : buildCommandHooks(hookScript);
+  const hooks = preferHttp ? buildHttpHooks(gate) : buildCommandHooks(hookScript);
   if (!settings[hooksKey] || typeof settings[hooksKey] !== "object") {
     settings[hooksKey] = {};
   }
   const existing = settings[hooksKey];
-  for (const [eventName, entries] of Object.entries(hooks)) {
-    if (!Array.isArray(existing[eventName])) existing[eventName] = [];
-    existing[eventName] = existing[eventName].filter((entry) => {
-      const cmd = entry?.command || "";
-      const url = entry?.url || "";
-      return (
-        !String(cmd).includes("vibe-island") &&
-        !String(cmd).includes("winsur-hook") &&
-        !String(url).includes("18900")
-      );
-    });
-    existing[eventName].push(...entries);
+  for (const [eventName, groups] of Object.entries(hooks)) {
+    existing[eventName] = [...stripWinsurHooks(existing[eventName]), ...groups];
   }
   fs.writeFileSync(configPath, JSON.stringify(settings, null, 2), "utf8");
 }
@@ -209,17 +253,7 @@ function uninstallFromConfig(configPath, hooksKey) {
   }
   if (!settings[hooksKey] || typeof settings[hooksKey] !== "object") return;
   for (const eventName of Object.keys(settings[hooksKey])) {
-    const arr = settings[hooksKey][eventName];
-    if (!Array.isArray(arr)) continue;
-    settings[hooksKey][eventName] = arr.filter((entry) => {
-      const cmd = entry?.command || "";
-      const url = entry?.url || "";
-      return (
-        !String(cmd).includes("vibe-island") &&
-        !String(cmd).includes("winsur-hook") &&
-        !String(url).includes("18900")
-      );
-    });
+    settings[hooksKey][eventName] = stripWinsurHooks(settings[hooksKey][eventName]);
   }
   fs.writeFileSync(configPath, JSON.stringify(settings, null, 2), "utf8");
 }
@@ -252,7 +286,11 @@ function installAllHooks() {
           host.key === "claude_code" ||
           host.key === "claude_desktop" ||
           host.typeId === "claude-code";
-        installHooksToConfig(host.configPath, hookScript, host.hooksKey, preferHttp);
+        // Only Claude Code's PreToolUse decision protocol is verified, so it is
+        // the only host whose tool calls we actually hold. Everything else
+        // reports activity and falls through to its own permission flow.
+        const gate = host.key === "claude_code";
+        installHooksToConfig(host.configPath, hookScript, host.hooksKey, preferHttp, gate);
       }
       installed.push(host.name);
     } catch (e) {
@@ -339,4 +377,6 @@ module.exports = {
   getHooksDir,
   getAgentHosts,
   autoInstallOnLaunch,
+  buildHttpHooks,
+  stripWinsurHooks,
 };

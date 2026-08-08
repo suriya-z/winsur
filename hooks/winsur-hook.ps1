@@ -1,5 +1,9 @@
-﻿# Winsur â€” forward agent hook events to local HTTP server
+# Winsur - forward agent hook events to local HTTP server
 # Supports Claude Code / Codex / Grok Build / Cursor-style stdin JSON
+#
+# ASCII only on purpose: this file is read by both Windows PowerShell 5.1 and
+# pwsh, which disagree about the encoding of a BOM-less file. Non-ASCII text
+# here comes back mojibaked.
 
 param(
     [Parameter(Position = 0)]
@@ -34,7 +38,7 @@ function Ensure-Prop($obj, $name, $value) {
     }
 }
 
-# Normalize Grok camelCase â†’ snake_case the server expects
+# Normalize Grok camelCase -> snake_case the server expects
 if ($payload.hookEventName -and -not $payload.hook_event_name) {
     Ensure-Prop $payload "hook_event_name" $payload.hookEventName
 }
@@ -98,13 +102,11 @@ $jsonBody = $payload | ConvertTo-Json -Depth 12 -Compress
 try {
     Invoke-RestMethod -Uri $endpoint -Method Post -Body $jsonBody -ContentType "application/json; charset=utf-8" -TimeoutSec $TIMEOUT_SEC | Out-Null
 } catch {
-    # Island offline â€” fail open
+    # Island offline - fail open
 }
 
-# Grok/Claude PreToolUse allow
-if ($resolvedEvent -match "PreToolUse|pre_tool_use|preToolUse") {
-    Write-Output '{"decision":"allow"}'
-}
+# Report only. Exiting 0 with no output means "no decision", which leaves the
+# agent's own permission flow intact. Do not print a decision here: gating runs
+# over the blocking /hooks/permission endpoint, and only for hosts whose
+# PreToolUse decision protocol is known (see electron/hooks.cjs).
 exit 0
-
-

@@ -97,7 +97,14 @@ function createHookServer(callbacks) {
       const stamp = new Date().toLocaleTimeString();
       pushLog(`${stamp} | event=${eventName} ntype=${ntype} tool=${tool} sid=${sid}`);
 
-      const session = sessionManager.handleEvent(payload);
+      // This endpoint holds the tool call open, so the event has to raise a
+      // permission card. Left as PreToolUse it would clear one instead.
+      const handled =
+        url === "/hooks/permission"
+          ? { ...payload, hook_event_name: "PermissionRequest" }
+          : payload;
+
+      const session = sessionManager.handleEvent(handled);
       if (session) {
         callbacks.onSessionUpdate?.(session);
 
@@ -124,15 +131,17 @@ function createHookServer(callbacks) {
 
       // Blocking permission endpoint
       if (url === "/hooks/permission") {
-        const sessionId = payload.session_id || session?.id;
+        // Key on the card id the UI will answer with, not the raw hook session
+        // id — one card can span several agent session ids.
+        const sessionId = session?.id || payload.session_id;
         const decision = await sessionManager.waitPermission(sessionId, 300000);
         return sendJson(res, 200, {
-          decision,
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
             permissionDecision: decision === "allow" ? "allow" : "deny",
+            permissionDecisionReason:
+              decision === "allow" ? "Allowed in Winsur" : "Denied in Winsur",
           },
-          continue: true,
         });
       }
 

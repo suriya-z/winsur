@@ -168,6 +168,28 @@ function inferAgentType(payload) {
 // How long after last tool activity before we show Done (if no Stop event)
 const IDLE_AFTER_MS = 6000;
 
+/**
+ * One-line summary of what a tool is about to do. PreToolUse payloads carry no
+ * message, so without this the permission card shows a bare tool name and you
+ * would be approving a command you cannot see.
+ */
+function describeToolInput(toolInput) {
+  if (!toolInput || typeof toolInput !== "object") return "";
+  const summary =
+    toolInput.command ||
+    toolInput.file_path ||
+    toolInput.notebook_path ||
+    toolInput.path ||
+    toolInput.pattern ||
+    toolInput.url;
+  if (summary) return String(summary);
+  try {
+    return JSON.stringify(toolInput);
+  } catch {
+    return "";
+  }
+}
+
 class SessionManager {
   constructor() {
     this.sessions = new Map();
@@ -319,10 +341,12 @@ class SessionManager {
         break;
 
       case "PreToolUse":
-        session.status = "thinking";
         session.last_tool = payload.tool_name || "tool";
         session.pending_question = null;
-        session.pending_permission = null;
+        // The activity relay and the gated permission hook fire in parallel for
+        // the same tool call. Whichever lands second must not erase the card the
+        // other raised, so leave a live permission alone.
+        if (!session.pending_permission) session.status = "thinking";
         this.cancelIdle(session.id); // actively working
         break;
 
@@ -341,7 +365,7 @@ class SessionManager {
         session.pending_permission = {
           tool_name: payload.tool_name || "",
           tool_input: payload.tool_input || {},
-          description: payload.message || "",
+          description: payload.message || describeToolInput(payload.tool_input),
           timestamp: nowIso(),
         };
         break;
