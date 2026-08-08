@@ -50,7 +50,7 @@ function blip(freqs: number[], dur = 0.07, type: OscillatorType = "square") {
   }
 }
 
-async function tryCustom(_name: string): Promise<boolean> {
+async function tryCustom(): Promise<boolean> {
   // Optional: user places files via settings path documented in UI
   // Browser/Electron file:// from userData not always allowed — use generated only for reliability
   return false;
@@ -58,7 +58,7 @@ async function tryCustom(_name: string): Promise<boolean> {
 
 export function playSound(ev: SoundEvent) {
   if (!enabled) return;
-  void tryCustom(ev).then((ok) => {
+  void tryCustom().then((ok) => {
     if (ok) return;
     switch (ev) {
       case "done":

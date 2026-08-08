@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { motion } from "motion/react";
 import { MessageCircle, Send } from "lucide-react";
-import { replyQuestion } from "../../lib/tauri";
+import { replyQuestion } from "../../lib/bridge";
 
 interface QuestionReplyProps {
   sessionId: string;

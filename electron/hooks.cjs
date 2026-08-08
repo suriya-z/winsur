@@ -39,27 +39,19 @@ function getAgentHosts() {
 }
 
 function getHooksDir() {
-  if (process.resourcesPath) {
-    const packaged = path.join(process.resourcesPath, "hooks");
-    if (fs.existsSync(path.join(packaged, "winsur-hook.ps1"))) return packaged;
-    if (fs.existsSync(path.join(packaged, "vibe-island-hook.ps1"))) return packaged;
-  }
+  const candidates = [];
+  if (process.resourcesPath) candidates.push(path.join(process.resourcesPath, "hooks"));
   const dev = path.join(__dirname, "..", "hooks");
-  if (fs.existsSync(path.join(dev, "winsur-hook.ps1"))) return dev;
-  if (fs.existsSync(path.join(dev, "vibe-island-hook.ps1"))) return dev;
-  const cwd = path.join(process.cwd(), "hooks");
-  if (fs.existsSync(path.join(cwd, "winsur-hook.ps1"))) return cwd;
-  if (fs.existsSync(path.join(cwd, "vibe-island-hook.ps1"))) return cwd;
+  candidates.push(dev, path.join(process.cwd(), "hooks"));
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, "winsur-hook.ps1"))) return dir;
+  }
   return dev;
 }
 
 function getHookScriptPath() {
-  const dir = getHooksDir();
-  for (const name of ["winsur-hook.ps1", "vibe-island-hook.ps1"]) {
-    const p = path.join(dir, name);
-    if (fs.existsSync(p)) return p;
-  }
-  return null;
+  const p = path.join(getHooksDir(), "winsur-hook.ps1");
+  return fs.existsSync(p) ? p : null;
 }
 
 function isDetected(host) {
@@ -143,51 +135,31 @@ function stripWinsurHooks(groups) {
 }
 
 /** Grok: HTTP only — dual HTTP+command double-fires and creates 2 cards */
-function buildGrokHookFile(_hookScriptPath) {
-  const http = (t = 5) => ({ type: "http", url: HOOK_URL, timeout: t });
-  const one = (e) => ({ hooks: [http(5)] });
+function buildGrokHookFile() {
+  const relay = () => ({
+    hooks: [{ type: "http", url: HOOK_URL, timeout: EVENT_TIMEOUT_SEC }],
+  });
   return {
     hooks: {
-      SessionStart: [one("SessionStart")],
-      UserPromptSubmit: [one("UserPromptSubmit")],
-      PreToolUse: [one("PreToolUse")],
-      PostToolUse: [one("PostToolUse")],
-      PostToolUseFailure: [one("PostToolUseFailure")],
-      Stop: [one("Stop")],
-      Notification: [one("Notification")],
-      SubagentStart: [one("SubagentStart")],
-      SubagentStop: [one("SubagentStop")],
-      SessionEnd: [one("SessionEnd")],
+      SessionStart: [relay()],
+      UserPromptSubmit: [relay()],
+      PreToolUse: [relay()],
+      PostToolUse: [relay()],
+      PostToolUseFailure: [relay()],
+      Stop: [relay()],
+      Notification: [relay()],
+      SubagentStart: [relay()],
+      SubagentStop: [relay()],
+      SessionEnd: [relay()],
     },
   };
 }
 
-function injectScriptPaths(config, hookScriptPath) {
-  const cmdBase = `powershell -ExecutionPolicy Bypass -NoProfile -File "${hookScriptPath}"`;
-  const hooks = config.hooks || {};
-  for (const [eventName, groups] of Object.entries(hooks)) {
-    if (!Array.isArray(groups)) continue;
-    for (const group of groups) {
-      if (!Array.isArray(group.hooks)) continue;
-      for (const h of group.hooks) {
-        if (h && h.type === "command") {
-          const parts = String(h.command || "").trim().split(/\s+/);
-          const last = parts[parts.length - 1];
-          const eventArg = /^[A-Za-z]+$/.test(last) ? last : eventName;
-          h.command = `${cmdBase} ${eventArg}`;
-        }
-      }
-    }
-  }
-  return config;
-}
-
 function installGrokHooks(configPath) {
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  const hookScript = getHookScriptPath();
   fs.writeFileSync(
     configPath,
-    JSON.stringify(buildGrokHookFile(hookScript || ""), null, 2),
+    JSON.stringify(buildGrokHookFile(), null, 2),
     "utf8"
   );
   // Remove legacy double-hook file that caused 2 cards for one Grok terminal

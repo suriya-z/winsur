@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronUp, Radio, Settings } from "lucide-react";
-import { bindClickOrDrag, checkHooks } from "../../lib/tauri";
+import { bindClickOrDrag, checkHooks } from "../../lib/bridge";
 import { AgentCard } from "../Agent/AgentCard";
 import { HookSettings } from "../Settings/HookSettings";
 import { ProPanel } from "../Settings/ProPanel";

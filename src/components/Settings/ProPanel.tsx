@@ -44,6 +44,9 @@ export function ProPanel() {
   };
 
   useEffect(() => {
+    // Loads on mount and repolls the live tab; every setState here lands in an
+    // async continuation, not synchronously during the effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
     const t = setInterval(() => {
       if (tab === "usage") void getUsage().then(setUsage);

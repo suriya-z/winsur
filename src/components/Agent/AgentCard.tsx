@@ -4,10 +4,11 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ShieldAlert, MessageSquare, X } from "lucide-react";
 import { StatusDot } from "../shared/StatusDot";
-import { AgentIcon, getAgentColor, getAgentLabel } from "../shared/AgentIcon";
+import { AgentIcon } from "../shared/AgentIcon";
+import { getAgentColor, getAgentLabel } from "../shared/agentMeta";
 import { QuestionReply } from "./QuestionReply";
 import { PlanReview } from "./PlanReview";
-import { respondPermission, focusTerminal } from "../../lib/tauri";
+import { respondPermission, focusTerminal } from "../../lib/bridge";
 import { playSound } from "../../lib/sounds";
 import type { AgentSession } from "../../types/agent";
 
@@ -32,7 +33,11 @@ export function AgentCard({ agent }: { agent: AgentSession }) {
   const info = STATUS_INFO[agent.status] || STATUS_INFO.idle;
 
   const elapsed = () => {
-    const m = Math.floor((Date.now() - new Date(agent.last_event_at).getTime()) / 60000);
+    // Wall-clock by nature. The store repolls every 2s, so the label refreshes
+    // without needing its own ticking state.
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
+    const m = Math.floor((now - new Date(agent.last_event_at).getTime()) / 60000);
     if (m < 1) return "now";
     if (m < 60) return `${m}m`;
     return `${Math.floor(m / 60)}h`;

@@ -518,30 +518,6 @@ class SessionManager {
       }
     }
 
-    // Extra: only ONE card per agent product if multiple empty-cwd clones
-    const byType = new Map();
-    for (const s of byKey.values()) {
-      const t = s.agent_type || "unknown";
-      const prev = byType.get(t);
-      if (!prev) {
-        byType.set(t, s);
-        continue;
-      }
-      // Same product, different folders → keep both only if both have real distinct cwds
-      const a = normCwd(prev.cwd);
-      const b = normCwd(s.cwd);
-      if (a && b && a !== b) {
-        // keep both under composite — use display key already
-        byType.set(`${t}::${b}`, s);
-        byType.set(`${t}::${a}`, prev);
-        byType.delete(t);
-      } else {
-        // merge: keep newer
-        if (new Date(s.last_event_at) > new Date(prev.last_event_at)) byType.set(t, s);
-      }
-    }
-
-    // Prefer byKey (folder-aware) as source of truth
     return Array.from(byKey.values())
       .map((s) => ({ ...s }))
       .sort(
@@ -561,10 +537,6 @@ class SessionManager {
     if (waiter) {
       waiter.resolve(decision);
       return true;
-    }
-    // Also try display-index primary
-    for (const s of this.sessions.values()) {
-      if (s.id === sessionId) continue;
     }
     return false;
   }

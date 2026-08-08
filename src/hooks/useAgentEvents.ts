@@ -1,7 +1,7 @@
 // Agent event listening — IPC + poll + sound alerts
 
 import { useEffect, useRef } from "react";
-import { getAgents, onAgentUpdate, getSettings } from "../lib/tauri";
+import { getAgents, onAgentUpdate, getSettings } from "../lib/bridge";
 import { useAgentStore } from "../stores/agentStore";
 import { playSound, setSoundEnabled, setSoundVolume } from "../lib/sounds";
 import type { AgentSession } from "../types/agent";

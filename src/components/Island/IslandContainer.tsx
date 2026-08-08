@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { bindClickOrDrag, stopWindowDragging } from "../../lib/tauri";
+import { bindClickOrDrag, stopWindowDragging } from "../../lib/bridge";
 import { useAgentStore } from "../../stores/agentStore";
 import { CollapsedView } from "./CollapsedView";
 import { ExpandedView } from "./ExpandedView";
@@ -39,6 +39,8 @@ export function IslandContainer() {
   const [doneFlash, setDoneFlash] = useState(false);
   useEffect(() => {
     if (notify === "done" && !isExpanded) {
+      // Transient flash driven by a store notification, not by render state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDoneFlash(true);
       clearNotify();
       const t = setTimeout(() => setDoneFlash(false), 1500);

@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Download, Trash2, CheckCircle, XCircle, Loader, AlertCircle, ChevronDown } from "lucide-react";
-import { installHooks, uninstallHooks, checkHooks } from "../../lib/tauri";
+import { installHooks, uninstallHooks, checkHooks } from "../../lib/bridge";
 
 interface HostStatus {
   installed: boolean;

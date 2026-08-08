@@ -4,7 +4,7 @@
 
 import { useEffect } from "react";
 import { useAgentStore } from "../stores/agentStore";
-import { respondPermission } from "../lib/tauri";
+import { respondPermission } from "../lib/bridge";
 
 /**
  * 全局键盘快捷键处理
@@ -26,13 +26,17 @@ export function useKeyboardShortcuts() {
         e.preventDefault();
         try {
           await respondPermission(pendingAgent.id, "allow");
-        } catch {}
+        } catch {
+          /* ignore */
+        }
       } else if (e.key === "Escape") {
         e.preventDefault();
         if (pendingAgent) {
           try {
             await respondPermission(pendingAgent.id, "deny");
-          } catch {}
+          } catch {
+            /* ignore */
+          }
         } else if (isExpanded) {
           setExpanded(false);
         }
