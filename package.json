@@ -3,7 +3,16 @@
   "private": true,
   "version": "0.1.1",
   "description": "Winsur — multi-agent control surface for Windows",
-  "author": "Winsur",
+  "author": "wwz",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/summerchaserwwz/winsur.git"
+  },
+  "homepage": "https://github.com/summerchaserwwz/winsur",
+  "bugs": {
+    "url": "https://github.com/summerchaserwwz/winsur/issues"
+  },
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -16,6 +25,7 @@
     "icon": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make-icon.ps1",
     "electron:build": "npm run icon && vite build && electron-builder --win --config.productName=Winsur",
     "dist": "npm run electron:build",
+    "release": "npm run icon && vite build && electron-builder --win --config.productName=Winsur --publish always",
     "start": "npm run electron:dev",
     "free": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/free-ports.ps1",
     "restart": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start.ps1",
@@ -55,10 +65,17 @@
   "build": {
     "appId": "com.winsur.app",
     "productName": "Winsur",
-    "copyright": "Copyright © Winsur",
+    "copyright": "Copyright © 2026 wwz",
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "summerchaserwwz",
+        "repo": "winsur"
+      }
+    ],
     "files": [
       "dist/**/*",
       "electron/**/*",

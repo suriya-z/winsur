@@ -1,0 +1,39 @@
+name: Release
+
+# Tag a commit on main (git tag v0.1.2 && git push origin v0.1.2) and this
+# builds the Windows installers and attaches them to a GitHub Release.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write # required to create the release and upload assets
+
+jobs:
+  build:
+    # Winsur is Windows-only: the icon step, hook scripts and window targeting
+    # are all PowerShell/Win32, so this cannot cross-compile from Linux.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc -b
+
+      - name: Build and publish installers
+        run: npm run release
+        env:
+          # Provided automatically by Actions; no secret to configure.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
