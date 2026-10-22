@@ -6,13 +6,20 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { bindClickOrDrag, stopWindowDragging, setWindowIgnoreMouseEvents } from "../../lib/bridge";
+import { bindClickOrDrag, reportIslandMetrics, stopWindowDragging } from "../../lib/bridge";
 import { useAgentStore } from "../../stores/agentStore";
 import { CollapsedView } from "./CollapsedView";
 import { ExpandedView } from "./ExpandedView";
 
 const SPRING_OPEN = { type: "spring" as const, stiffness: 224, damping: 24, mass: 1 };
 const SPRING_CLOSE = { type: "tween" as const, duration: 0.28, ease: [0.25, 0.1, 0.25, 1] as [number, number, number, number] };
+const EXPANDED_WIDTH = 460;
+
+function visibleRadius(style: CSSStyleDeclaration, width: number, height: number) {
+  const parsed = Number.parseFloat(style.borderTopLeftRadius || style.borderRadius || "0");
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.min(parsed, width / 2, height / 2));
+}
 
 export function IslandContainer() {
   const isExpanded = useAgentStore((s) => s.isExpanded);
@@ -23,34 +30,45 @@ export function IslandContainer() {
   const agents = useAgentStore((s) => s.agents);
   const islandRef = useRef<HTMLDivElement>(null);
 
-  // Safety: always kill drag if window blurs / tab hides, and pass mouse clicks through transparent background
+  // The main process hit-tests the cursor against this rectangle. Measuring
+  // every frame keeps the window (and the click-through shape) on the visible
+  // island during the expand/collapse animation, not on a padded bounding box.
   useEffect(() => {
-    let ignoring = true;
-    setWindowIgnoreMouseEvents(true);
-
-    const onMouseMove = (e: MouseEvent) => {
+    let frame = 0;
+    let last = "";
+    const tick = () => {
       const el = islandRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const inside =
-        e.clientX >= rect.left - 4 &&
-        e.clientX <= rect.right + 4 &&
-        e.clientY >= rect.top - 4 &&
-        e.clientY <= rect.bottom + 4;
-      const nextIgnore = !inside;
-      if (nextIgnore !== ignoring) {
-        ignoring = nextIgnore;
-        setWindowIgnoreMouseEvents(nextIgnore);
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const radius = visibleRadius(getComputedStyle(el), rect.width, rect.height);
+        const key = [
+          rect.left.toFixed(1),
+          rect.top.toFixed(1),
+          rect.width.toFixed(1),
+          rect.height.toFixed(1),
+          radius.toFixed(1),
+        ].join("|");
+        if (key !== last && rect.width > 0 && rect.height > 0) {
+          last = key;
+          reportIslandMetrics({
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height,
+            radius,
+          });
+        }
       }
+      frame = requestAnimationFrame(tick);
     };
+    frame = requestAnimationFrame(tick);
 
     const stop = () => stopWindowDragging();
-    window.addEventListener("mousemove", onMouseMove, { passive: true });
     window.addEventListener("blur", stop);
     window.addEventListener("mouseup", stop);
     window.addEventListener("pointerup", stop);
     return () => {
-      window.removeEventListener("mousemove", onMouseMove);
+      cancelAnimationFrame(frame);
       window.removeEventListener("blur", stop);
       window.removeEventListener("mouseup", stop);
       window.removeEventListener("pointerup", stop);
@@ -102,7 +120,7 @@ export function IslandContainer() {
       layout
       onPointerDown={handlePointerDown}
       animate={{
-        width: isExpanded ? "min(96vw, 460px)" : collapsedWidth,
+        width: isExpanded ? EXPANDED_WIDTH : collapsedWidth,
         height: isExpanded ? "auto" : 38,
         borderRadius: isExpanded ? 20 : 999,
       }}
@@ -114,7 +132,6 @@ export function IslandContainer() {
         border: "1px solid var(--border-subtle)",
         overflow: "hidden",
         cursor: isExpanded ? "default" : "grab",
-        marginTop: 6,
         minHeight: 38,
         touchAction: "none",
       }}

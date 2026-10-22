@@ -57,6 +57,19 @@ export const useAgentStore = create<AgentStore>((set) => ({
 
   updateAgent: (agent) =>
     set((state) => {
+      if (agent.status === "disconnected") {
+        const newAgents = state.agents.filter((a) => a.id !== agent.id);
+        const { hasPerm, hasAny, count } = checkPending(newAgents);
+        const shouldCollapse = state.hasAnyPending && !hasAny;
+        return {
+          agents: newAgents,
+          hasPendingPermission: hasPerm,
+          hasAnyPending: hasAny,
+          attentionCount: count,
+          isExpanded: shouldCollapse ? false : state.isExpanded,
+        };
+      }
+
       const norm = (c: string) =>
         String(c || "")
           .replace(/\//g, "\\")
@@ -132,10 +145,20 @@ export const useAgentStore = create<AgentStore>((set) => ({
       return { agents: newAgents, hasPendingPermission: hasPerm, hasAnyPending: hasAny, attentionCount: count };
     }),
 
-  setAgents: (agents) => {
-    const { hasPerm, hasAny, count } = checkPending(agents);
-    set({ agents, hasPendingPermission: hasPerm, hasAnyPending: hasAny, attentionCount: count });
-  },
+  setAgents: (agents) =>
+    set((state) => {
+      const next = agents.filter((a) => a.status !== "disconnected");
+      const { hasPerm, hasAny, count } = checkPending(next);
+      const shouldExpand = hasAny;
+      const shouldCollapse = state.hasAnyPending && !hasAny;
+      return {
+        agents: next,
+        hasPendingPermission: hasPerm,
+        hasAnyPending: hasAny,
+        attentionCount: count,
+        isExpanded: shouldExpand ? true : shouldCollapse ? false : state.isExpanded,
+      };
+    }),
 
   toggleExpanded: () => set((state) => ({ isExpanded: !state.isExpanded })),
   setExpanded: (expanded) => set({ isExpanded: expanded }),

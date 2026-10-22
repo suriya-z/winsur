@@ -113,14 +113,78 @@ export function AgentIcon({ type, size = 14, color = "#fff" }: AgentIconProps) {
         </svg>
       );
 
-    // 默认: 方块
-    default:
+    // Gemini: four-point spark
+    case "gemini":
       return (
         <svg width={s} height={s} viewBox="0 0 16 16" fill="none">
-          <rect x="2" y="2" width="12" height="12" rx="3" stroke={color} strokeWidth="1.5" />
-          <path d="M5 8H11" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
-          <path d="M8 5V11" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+          <path d="M8 1.5L9.2 6.8L14.5 8L9.2 9.2L8 14.5L6.8 9.2L1.5 8L6.8 6.8L8 1.5Z" stroke={color} strokeWidth="1.3" strokeLinejoin="round" />
         </svg>
       );
+
+    // Copilot: two offset rings
+    case "copilot":
+      return (
+        <svg width={s} height={s} viewBox="0 0 16 16" fill="none">
+          <circle cx="6.5" cy="8" r="3.2" stroke={color} strokeWidth="1.5" />
+          <circle cx="10" cy="8" r="3.2" stroke={color} strokeWidth="1.5" />
+        </svg>
+      );
+
+    // Hermes: wing chevron
+    case "hermes":
+      return (
+        <svg width={s} height={s} viewBox="0 0 16 16" fill="none">
+          <path d="M2 8H14" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+          <path d="M4 5C6 6.5 7 8 8 8C9 8 10 6.5 12 5" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+          <path d="M4 11C6 9.5 7 8 8 8C9 8 10 9.5 12 11" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      );
+
+    // DeepSeek: search mark
+    case "deepseek":
+      return (
+        <svg width={s} height={s} viewBox="0 0 16 16" fill="none">
+          <circle cx="7" cy="7" r="4" stroke={color} strokeWidth="1.5" />
+          <path d="M10 10L13.5 13.5" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      );
+
+    // Kimi: crescent
+    case "kimi":
+      return (
+        <svg width={s} height={s} viewBox="0 0 16 16" fill="none">
+          <path d="M10 2.5C6.5 3.2 4 6 4 9.2C4 12 6.2 13.8 9 13.8C7 12.8 6 11 6.2 8.8C6.4 6.4 8 4.2 10 2.5Z" stroke={color} strokeWidth="1.4" strokeLinejoin="round" />
+        </svg>
+      );
+
+    // Mistral: three wind bars
+    case "mistral":
+      return (
+        <svg width={s} height={s} viewBox="0 0 16 16" fill="none">
+          <path d="M2 4.5H11C12.5 4.5 13.5 5.5 13.5 6.5" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+          <path d="M2 8H14" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+          <path d="M2 11.5H9C10.5 11.5 11.5 10.5 11.5 9.5" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      );
+
+    default: {
+      const letter = (type || "?").replace(/[^a-z]/gi, "").slice(0, 1).toUpperCase() || "?";
+      return (
+        <svg width={s} height={s} viewBox="0 0 16 16" fill="none">
+          <rect x="1.5" y="1.5" width="13" height="13" rx="4" stroke={color} strokeWidth="1.4" />
+          <text
+            x="8"
+            y="11.2"
+            textAnchor="middle"
+            fill={color}
+            fontSize="8"
+            fontFamily="Segoe UI, sans-serif"
+            fontWeight="700"
+          >
+            {letter}
+          </text>
+        </svg>
+      );
+    }
   }
 }

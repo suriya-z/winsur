@@ -10,6 +10,13 @@ type WinsurApi = {
   startDragging: () => void;
   stopDragging?: () => void;
   setIgnoreMouseEvents?: (ignore: boolean, forward?: boolean) => void;
+  reportIslandMetrics?: (metrics: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    radius: number;
+  }) => void;
   platform?: string;
 };
 
@@ -150,6 +157,21 @@ export function stopWindowDragging(): void {
     api().stopDragging?.();
   } catch {
     /* ignore */
+  }
+}
+
+/** Tell the main process the visible island box so it can size the window and hit-test. */
+export function reportIslandMetrics(metrics: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  radius: number;
+}): void {
+  try {
+    api().reportIslandMetrics?.(metrics);
+  } catch {
+    /* ignore in pure browser */
   }
 }
 

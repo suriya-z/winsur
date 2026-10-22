@@ -209,6 +209,50 @@ function installGrokHooks(configPath) {
   }
 }
 
+/**
+ * Cursor's hooks.json is NOT Claude's nested { matcher, hooks: [{ type, command }] }.
+ * It is { version: 1, hooks: { sessionStart: [{ command }] } } with camelCase
+ * event names. The nested shape parses as an invalid hook and never fires, so
+ * an already-running Cursor stayed invisible even after the next agent turn.
+ *
+ * Permission hooks (preToolUse, beforeShellExecution, …) are intentionally
+ * omitted: Cursor blocks the action when those commands print empty stdout.
+ * Observation hooks are enough to recognize the session; the script prints
+ * {"continue":true} for beforeSubmitPrompt so sending a prompt is not blocked.
+ */
+function cursorHookCommand(scriptPath, eventName) {
+  const quoted = String(scriptPath).replace(/'/g, "''");
+  // Cursor runs the command string inside PowerShell and pipes the hook JSON
+  // into that process. A nested `powershell -File` does not inherit that
+  // pipeline, so the script saw an empty body. Pipe $input into the script.
+  return `$input | & '${quoted}' ${eventName} cursor`;
+}
+
+function buildCursorHooks(hookScript) {
+  const events = [
+    "sessionStart",
+    "sessionEnd",
+    "beforeSubmitPrompt",
+    "postToolUse",
+    "postToolUseFailure",
+    "stop",
+    "subagentStop",
+    "afterAgentResponse",
+    "afterAgentThought",
+    "workspaceOpen",
+  ];
+  const hooks = {};
+  for (const ev of events) {
+    hooks[ev] = [
+      {
+        command: cursorHookCommand(hookScript, ev),
+        timeout: EVENT_TIMEOUT_SEC,
+      },
+    ];
+  }
+  return hooks;
+}
+
 function installCursorHooks(configPath, hookScript) {
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   let existing = {};
@@ -219,12 +263,19 @@ function installCursorHooks(configPath, hookScript) {
       existing = {};
     }
   }
-  // Cursor often uses top-level event keys or hooks object
-  const commandHooks = buildCommandHooks(hookScript, "cursor");
-  if (!existing.hooks) existing.hooks = {};
-  for (const [ev, groups] of Object.entries(commandHooks)) {
-    existing.hooks[ev] = [...stripWinsurHooks(existing.hooks[ev]), ...groups];
+  if (!existing.hooks || typeof existing.hooks !== "object" || Array.isArray(existing.hooks)) {
+    existing.hooks = {};
   }
+  for (const key of Object.keys(existing.hooks)) {
+    const kept = stripWinsurHooks(existing.hooks[key]);
+    if (kept.length) existing.hooks[key] = kept;
+    else delete existing.hooks[key];
+  }
+  const commandHooks = buildCursorHooks(hookScript);
+  for (const [ev, handlers] of Object.entries(commandHooks)) {
+    existing.hooks[ev] = [...stripWinsurHooks(existing.hooks[ev]), ...handlers];
+  }
+  if (existing.version == null) existing.version = 1;
   fs.writeFileSync(configPath, JSON.stringify(existing, null, 2), "utf8");
 }
 
@@ -809,5 +860,6 @@ module.exports = {
   getAgentHosts,
   autoInstallOnLaunch,
   buildHttpHooks,
+  buildCursorHooks,
   stripWinsurHooks,
 };

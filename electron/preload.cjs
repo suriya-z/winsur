@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("winsur", {
   stopDragging: () => ipcRenderer.send("winsur:stop-dragging"),
   setIgnoreMouseEvents: (ignore, forward = true) =>
     ipcRenderer.send("winsur:set-ignore-mouse-events", { ignore: !!ignore, forward: !!forward }),
+  reportIslandMetrics: (metrics) => ipcRenderer.send("winsur:island-metrics", metrics || {}),
   platform: process.platform,
 });
 // Back-compat alias during transition
@@ -27,5 +28,6 @@ contextBridge.exposeInMainWorld("vibeIsland", {
   stopDragging: () => ipcRenderer.send("winsur:stop-dragging"),
   setIgnoreMouseEvents: (ignore, forward = true) =>
     ipcRenderer.send("winsur:set-ignore-mouse-events", { ignore: !!ignore, forward: !!forward }),
+  reportIslandMetrics: (metrics) => ipcRenderer.send("winsur:island-metrics", metrics || {}),
   platform: process.platform,
 });

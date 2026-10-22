@@ -18,11 +18,22 @@ $BASE_URL = "http://127.0.0.1:$VIBE_ISLAND_PORT"
 # Keep short so Grok/Claude hooks fail-open fast if island is down
 $TIMEOUT_SEC = 3
 
-# Read full stdin
+# Windows PowerShell 5.1 binds a piped payload to $input, not [Console]::In.
+# Cursor launches hook commands through PowerShell and pipes JSON that way.
+# Reading only [Console]::In dropped the body, so every event got a fresh
+# random session id and a useless cwd (often System32) and never matched
+# the agent that was already running.
+try { [Console]::InputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 $stdinData = ""
 try {
-    $stdinData = [Console]::In.ReadToEnd()
+    $piped = @($input) | ForEach-Object { "$_" }
+    if ($piped -and $piped.Count -gt 0) { $stdinData = ($piped -join "`n") }
 } catch {}
+if (-not $stdinData -or -not $stdinData.Trim()) {
+    try {
+        if ([Console]::IsInputRedirected) { $stdinData = [Console]::In.ReadToEnd() }
+    } catch {}
+}
 if (-not $stdinData -or $stdinData.Trim() -eq "") { $stdinData = "{}" }
 
 try {
@@ -47,6 +58,9 @@ if ($payload.hookEventName -and -not $payload.hook_event_name) {
 if ($payload.sessionId -and -not $payload.session_id) {
     Ensure-Prop $payload "session_id" $payload.sessionId
 }
+if ($payload.conversation_id -and -not $payload.session_id) {
+    Ensure-Prop $payload "session_id" $payload.conversation_id
+}
 if ($payload.toolName -and -not $payload.tool_name) {
     Ensure-Prop $payload "tool_name" $payload.toolName
 }
@@ -55,6 +69,14 @@ if ($payload.toolInput -and -not $payload.tool_input) {
 }
 if ($payload.workspaceRoot -and -not $payload.cwd) {
     Ensure-Prop $payload "cwd" $payload.workspaceRoot
+}
+if ($payload.workspace_roots -and -not $payload.cwd) {
+    $roots = $payload.workspace_roots
+    if ($roots -is [System.Collections.IEnumerable] -and -not ($roots -is [string])) {
+        foreach ($firstRoot in $roots) { Ensure-Prop $payload "cwd" $firstRoot; break }
+    } else {
+        Ensure-Prop $payload "cwd" $roots
+    }
 }
 if ($payload.notificationType -and -not $payload.notification_type) {
     Ensure-Prop $payload "notification_type" $payload.notificationType
@@ -113,10 +135,26 @@ elseif ($env:CLAUDE_PROJECT_DIR) { $cwd = $env:CLAUDE_PROJECT_DIR }
 else { $cwd = (Get-Location).Path }
 Ensure-Prop $payload "cwd" $cwd
 
+# Drop a cwd that is just the shell PowerShell started in. An empty cwd
+# merges into the card Winsur already discovered for this agent; System32
+# would show up as a fake project and never match the real folder.
+function Test-UselessCwd([string]$p) {
+    if (-not $p) { return $true }
+    $n = $p.ToLowerInvariant()
+    if ($n -match '\\windows\\system32(\\+|$)') { return $true }
+    if ($n -match '\\windows\\syswow64(\\+|$)') { return $true }
+    return $false
+}
+if (Test-UselessCwd ([string]$payload.cwd)) {
+    Ensure-Prop $payload "cwd" ""
+    $payload.cwd = ""
+}
+
 # Agent type
 $agentType = "unknown"
 if ($payload.agent_type) { $agentType = $payload.agent_type }
 elseif ($HostHint -and $HostHint -ne "") { $agentType = $HostHint }
+elseif ($payload.cursor_version -or $payload.workspace_roots) { $agentType = "cursor" }
 elseif ($payload.conversationId -or $payload.toolCall) { $agentType = "antigravity" }
 elseif ($payload.profile -and $payload.delivery_id) { $agentType = "hermes" }
 elseif ($env:GROK_SESSION_ID -or $env:GROK_HOOK_EVENT -or $env:GROK_WORKSPACE_ROOT) { $agentType = "grok-build" }
@@ -145,6 +183,26 @@ if ($agentType -eq "antigravity" -or $payload.conversationId -or $payload.toolCa
     } else {
         Write-Output '{}'
     }
+    exit 0
+}
+
+# Cursor treats a beforeSubmitPrompt hook that prints nothing as a failed
+# decision and can drop the prompt. continue:true is an explicit pass-through.
+# Other Cursor observation hooks want a JSON object and must NOT include
+# followup_message (that would re-submit a prompt on stop).
+if ($agentType -eq "cursor") {
+    if ($resolvedEvent -eq "beforeSubmitPrompt") {
+        Write-Output '{"continue":true}'
+    } else {
+        Write-Output '{}'
+    }
+    exit 0
+}
+
+# Codex Stop / SubagentStop require JSON on stdout when the process exits 0.
+# "{}" is "no decision" — it does not deny the tool and does not continue the turn.
+if ($agentType -eq "codex") {
+    Write-Output '{}'
     exit 0
 }
 

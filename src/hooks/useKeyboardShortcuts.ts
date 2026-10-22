@@ -19,6 +19,14 @@ export function useKeyboardShortcuts() {
 
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing =
+        !!target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+      if (typing) return;
+
       // 找到第一个有待处理权限的 Agent
       const pendingAgent = agents.find((a) => a.pending_permission !== null);
 

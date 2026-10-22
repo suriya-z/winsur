@@ -6,8 +6,24 @@ const { createHookServer } = require("./server.cjs");
 const { installAllHooks, uninstallAllHooks, checkHooksStatus, autoInstallOnLaunch } = require("./hooks.cjs");
 const { focusTerminal, sendTextToWindow } = require("./window.cjs");
 const { collectUsage } = require("./usage.cjs");
+const { createOverlayController } = require("./overlay.cjs");
+const { scanRunningAgents } = require("./discover.cjs");
 const sshRemote = require("./ssh-remote.cjs");
 const fs = require("fs");
+
+// Name and userData must be set BEFORE requestSingleInstanceLock.
+// The lock id is derived from them. Called too early, every Electron app
+// shares the default name "Electron", so a leftover `electron .` (or any
+// other Electron app) makes this process take the "already running" path
+// and exit 0. `npm run electron:dev` uses concurrently -k, so that silent
+// exit also kills Vite and the whole dev session.
+app.setName("Winsur");
+try {
+  const appData = app.getPath("appData");
+  app.setPath("userData", path.join(appData, "winsur"));
+} catch (err) {
+  console.warn("[Winsur] Could not set userData path:", err.message || err);
+}
 
 const isDev = !app.isPackaged;
 const DEV_URL = process.env.VITE_DEV_SERVER_URL || "http://127.0.0.1:1420";
@@ -15,11 +31,18 @@ const DEV_URL = process.env.VITE_DEV_SERVER_URL || "http://127.0.0.1:1420";
 let mainWindow = null;
 let tray = null;
 let hookServer = null;
+let overlay = null;
+let discoveryTimer = null;
 
 // ── Single instance: second launch focuses the first (prevents dual hook servers) ──
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
-  app.quit();
+  process.stderr.write(
+    "[Winsur] Another Winsur instance already holds the single-instance lock. This process is exiting without starting a second hook server.\n"
+  );
+  // app.quit() is a graceful shutdown and, on Windows, has been observed to
+  // tear down the primary instance too. exit() stops only this process.
+  app.exit(0);
 } else {
   app.on("second-instance", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -60,15 +83,19 @@ async function releaseIslandForInput() {
 async function restoreIsland({ focus = true } = {}) {
   try {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setIgnoreMouseEvents(true, { forward: true });
       mainWindow.setAlwaysOnTop(true, "screen-saver");
       if (focus) {
         mainWindow.show();
         mainWindow.focus();
+      } else if (typeof mainWindow.showInactive === "function") {
+        // showInactive() returns undefined, so it must not be used as a
+        // boolean — `showInactive() || show()` always fell through to show()
+        // and stole focus back from the agent.
+        mainWindow.showInactive();
       } else {
-        // keep floating but don't steal FG from agent (jump success)
-        mainWindow.showInactive?.() || mainWindow.show();
+        mainWindow.show();
       }
+      overlay?.syncPointer(true);
     }
   } catch {
     /* ignore */
@@ -76,34 +103,57 @@ async function restoreIsland({ focus = true } = {}) {
 }
 
 function resolveSession(sessionManager, sessionId) {
-  let session = sessionManager.getSessions().find((s) => s.id === sessionId);
-  if (session) return session;
-  session = sessionManager.getSessions().find(
-    (s) =>
-      (sessionId && String(s.id).includes(String(sessionId))) ||
-      s.agent_type === "grok-build"
-  );
-  if (session) return session;
+  if (!sessionId) return null;
   const all = sessionManager.getSessions();
-  return all[0] || null;
+  return all.find((s) => s.id === sessionId) || null;
+}
+
+function broadcastSessions() {
+  if (!hookServer || !mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("agents-sync", hookServer.sessionManager.getSessions());
+}
+
+async function syncRunningAgents() {
+  if (!hookServer) return;
+  let snap;
+  try {
+    snap = await scanRunningAgents();
+  } catch (err) {
+    console.warn("[Winsur] Agent discovery failed:", err.message || err);
+    return;
+  }
+  // null = process list unreadable. Don't invent sessions and don't reap.
+  if (!snap) return;
+  let changed = false;
+  for (const info of snap.sessions) {
+    const result = hookServer.sessionManager.noteDiscovered(info);
+    if (result.created) changed = true;
+  }
+  const removed = hookServer.sessionManager.reap({
+    livePids: snap.pids,
+    liveTypes: snap.types,
+  });
+  if (changed || removed.length) broadcastSessions();
 }
 
 function createWindow() {
-  const { width: screenW } = screen.getPrimaryDisplay().workAreaSize;
-  const winW = 500;
-  const winH = 600;
-  const x = Math.round((screenW - winW) / 2);
-  const y = 8;
+  if (!overlay) overlay = createOverlayController(screen);
+  const initial = overlay.initialBounds();
 
   mainWindow = new BrowserWindow({
-    width: winW,
-    height: winH,
-    x,
-    y,
+    x: initial.x,
+    y: initial.y,
+    width: initial.width,
+    height: initial.height,
     frame: false,
     transparent: true,
+    thickFrame: false,
     alwaysOnTop: true,
-    resizable: true,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
     skipTaskbar: false,
     hasShadow: false,
     backgroundColor: "#00000000",
@@ -117,7 +167,11 @@ function createWindow() {
     title: "Winsur",
   });
 
-  console.log(`[Winsur] createWindow: x=${x}, y=${y}, winW=${winW}, winH=${winH}, DEV_URL=${DEV_URL}, isDev=${isDev}`);
+  overlay.attach(mainWindow);
+
+  console.log(
+    `[Winsur] createWindow: x=${initial.x}, y=${initial.y}, w=${initial.width}, h=${initial.height}, DEV_URL=${DEV_URL}, isDev=${isDev}`
+  );
 
   try {
     mainWindow.setAlwaysOnTop(true, "screen-saver");
@@ -153,22 +207,22 @@ function createWindow() {
     mainWindow.loadFile(distHtml);
   }
 
-  // Pass clicks through transparent background around the capsule by default
-  try {
-    mainWindow.setIgnoreMouseEvents(true, { forward: true });
-  } catch {}
-
+  // Click-through is owned by the overlay poll. Don't focus on show:
+  // a focused transparent window is much more eager to eat clicks, and
+  // stealing foreground from the agent the user already had open is wrong.
   mainWindow.once("ready-to-show", () => {
     console.log("[Winsur] ready-to-show fired -> showing window");
-    mainWindow.show();
-    mainWindow.focus();
+    if (typeof mainWindow.showInactive === "function") mainWindow.showInactive();
+    else mainWindow.show();
+    overlay.syncPointer(true);
   });
 
   setTimeout(() => {
     if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
       console.log("[Winsur] Fallback timeout -> forcing mainWindow.show()");
-      mainWindow.show();
-      mainWindow.focus();
+      if (typeof mainWindow.showInactive === "function") mainWindow.showInactive();
+      else mainWindow.show();
+      overlay.syncPointer(true);
     }
   }, 2000);
 
@@ -258,7 +312,7 @@ function wireIpc(sessionManager) {
         return sessionManager.getSessions();
 
       case "clear_agents":
-        sessionManager.clearAll();
+        sessionManager.dismissAll();
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send("agents-cleared", []);
           mainWindow.webContents.send("agents-sync", []);
@@ -404,7 +458,7 @@ function wireIpc(sessionManager) {
       }
 
       case "dismiss_agent":
-        sessionManager.removeSession(args.sessionId);
+        sessionManager.dismiss(args.sessionId);
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send("agents-sync", sessionManager.getSessions());
         }
@@ -478,12 +532,10 @@ function wireIpc(sessionManager) {
     }
   });
 
-  let dragState = null;
   let dragTimer = null;
   let dragSafety = null;
 
   function stopWindowDrag() {
-    dragState = null;
     if (dragTimer) {
       clearInterval(dragTimer);
       dragTimer = null;
@@ -492,56 +544,38 @@ function wireIpc(sessionManager) {
       clearTimeout(dragSafety);
       dragSafety = null;
     }
+    overlay?.endDrag();
   }
 
   function startDrag() {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    stopWindowDrag();
-
-    const point = screen.getCursorScreenPoint();
-    const bounds = mainWindow.getBounds();
-    dragState = {
-      offsetX: point.x - bounds.x,
-      offsetY: point.y - bounds.y,
-    };
+    if (!mainWindow || mainWindow.isDestroyed() || !overlay) return;
+    if (dragTimer) {
+      clearInterval(dragTimer);
+      dragTimer = null;
+    }
+    overlay.beginDrag(screen.getCursorScreenPoint());
 
     dragTimer = setInterval(() => {
-      if (!dragState || !mainWindow || mainWindow.isDestroyed()) {
+      if (!overlay?.isDragging() || !mainWindow || mainWindow.isDestroyed()) {
         stopWindowDrag();
         return;
       }
-      const p = screen.getCursorScreenPoint();
-      mainWindow.setPosition(
-        Math.round(p.x - dragState.offsetX),
-        Math.round(p.y - dragState.offsetY)
-      );
+      overlay.dragTo(screen.getCursorScreenPoint());
     }, 8);
 
     dragSafety = setTimeout(stopWindowDrag, 15000);
   }
 
-  ipcMain.on("winsur:start-dragging", () => {
-    try {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.setIgnoreMouseEvents(false);
-      }
-    } catch {}
-    startDrag();
-  });
+  ipcMain.on("winsur:start-dragging", startDrag);
   ipcMain.on("vibe:start-dragging", startDrag);
   ipcMain.on("winsur:stop-dragging", stopWindowDrag);
   ipcMain.on("vibe:stop-dragging", stopWindowDrag);
-  ipcMain.on("winsur:set-ignore-mouse-events", (_event, { ignore, forward = true } = {}) => {
-    try {
-      if (mainWindow && !mainWindow.isDestroyed() && !dragState) {
-        if (ignore) {
-          mainWindow.setIgnoreMouseEvents(true, { forward: !!forward });
-        } else {
-          mainWindow.setIgnoreMouseEvents(false);
-        }
-      }
-    } catch {}
+  ipcMain.on("winsur:island-metrics", (_event, metrics) => {
+    overlay?.noteMetrics(metrics);
   });
+  // The overlay poll is the hit-test. This channel stays so older renderers
+  // don't throw, but it must not fight the poll (that fight was the dead zone).
+  ipcMain.on("winsur:set-ignore-mouse-events", () => {});
 }
 
 if (gotLock) {
@@ -585,10 +619,17 @@ if (gotLock) {
       createWindow();
       console.log("[Winsur] Creating tray...");
       createTray();
+      console.log("[Winsur] Discovering agents already running...");
+      void syncRunningAgents();
+      discoveryTimer = setInterval(() => {
+        void syncRunningAgents();
+      }, 20000);
       console.log("[Winsur] Setup completed.");
     } catch (e) {
       console.error("[Winsur] Setup error:", e);
     }
+  }).catch((err) => {
+    console.error("[Winsur] Startup failed:", err);
   });
 
   app.on("window-all-closed", () => {
@@ -599,6 +640,15 @@ if (gotLock) {
 
   app.on("before-quit", async () => {
     app.isQuitting = true;
+    if (discoveryTimer) {
+      clearInterval(discoveryTimer);
+      discoveryTimer = null;
+    }
+    try {
+      overlay?.stop();
+    } catch {
+      /* ignore */
+    }
     try {
       sshRemote.disconnectAll();
     } catch {
