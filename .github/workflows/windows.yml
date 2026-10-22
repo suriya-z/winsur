@@ -55,20 +55,23 @@ jobs:
       - name: Installer sizes
         shell: pwsh
         run: |
-          $paths = @(
-            "src-tauri/target/release/bundle",
-            "src-tauri/target/release/winsur.exe"
+          $files = @(
+            (Get-ChildItem -Path target/release/bundle/nsis -Filter *.exe -File)
+            (Get-ChildItem -Path target/release/bundle/msi -Filter *.msi -File)
+            (Get-Item target/release/winsur.exe)
           )
-          Get-ChildItem -Path $paths -Recurse -File -ErrorAction SilentlyContinue |
-            Sort-Object FullName |
-            ForEach-Object { "{0}`t{1:N0} bytes" -f $_.FullName, $_.Length }
+          if ($files.Count -lt 3) {
+            Write-Error "expected NSIS, MSI, and winsur.exe under target/release"
+            exit 1
+          }
+          $files | Sort-Object FullName | ForEach-Object { "{0}`t{1:N0} bytes" -f $_.Name, $_.Length }
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
           name: winsur-windows
           path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/winsur.exe
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/msi/*.msi
+            target/release/winsur.exe
           if-no-files-found: error

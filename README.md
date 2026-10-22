@@ -15,7 +15,7 @@ Inspired by [Vibe Island](https://vibeisland.app) (macOS). Built for Windows wit
 |------|-----|
 | `*-setup.exe` (NSIS) | Installer — current user or per-machine, Start Menu and desktop shortcuts. Installs the WebView2 bootstrapper if Windows does not already have it |
 | `*.msi` | MSI installer, same app |
-| `winsur.exe` | No-install binary from `src-tauri\target\release\`. Needs the system WebView2 runtime |
+| `winsur.exe` | No-install binary from `target\release\`. Needs the system WebView2 runtime |
 
 Windows 10/11, x64. You do not need to clone this repo or install Node to use
 Winsur — the source is here to read, fork and contribute to.
@@ -81,8 +81,8 @@ npm run dist
 
 `npm start` runs the Vite dev server and the Tauri shell. `npm run dist` runs
 the frontend build, then the Tauri bundler. Output lands in
-`src-tauri\target\release\bundle\` (NSIS and MSI) and
-`src-tauri\target\release\winsur.exe`.
+`target\release\bundle\` (NSIS and MSI) and `target\release\winsur.exe`.
+Cargo writes that directory at the workspace root, not under `src-tauri`.
 
 You need the Rust stable toolchain (`rustup`) and the Visual Studio C++ build
 tools. WebView2 is the Windows system webview; the NSIS installer downloads
