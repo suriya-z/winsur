@@ -1,0 +1,33 @@
+{
+  "identifier": "default",
+  "description": "Winsur main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "notification:default",
+    "allow-get-agents",
+    "allow-clear-agents",
+    "allow-respond-permission",
+    "allow-focus-terminal",
+    "allow-get-settings",
+    "allow-save-settings",
+    "allow-get-usage",
+    "allow-ssh-list",
+    "allow-ssh-connect",
+    "allow-ssh-disconnect",
+    "allow-ssh-add",
+    "allow-ssh-remove",
+    "allow-ssh-deploy-script",
+    "allow-respond-plan",
+    "allow-dismiss-plan",
+    "allow-dismiss-agent",
+    "allow-reply-question",
+    "allow-install-hooks",
+    "allow-uninstall-hooks",
+    "allow-check-hooks",
+    "allow-start-dragging",
+    "allow-stop-dragging",
+    "allow-report-island-metrics",
+    "allow-set-ignore-mouse-events"
+  ]
+}

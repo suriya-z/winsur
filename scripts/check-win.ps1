@@ -11,8 +11,8 @@ public class Win {
     public struct RECT { public int Left, Top, Right, Bottom; }
 }
 "@
-$pids = @(Get-Process -Name electron,Winsur -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
-Write-Output "Electron/Winsur PIDs: $($pids -join ', ')"
+$pids = @(Get-Process -Name winsur,Winsur -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
+Write-Output "Winsur PIDs: $($pids -join ', ')"
 if ($pids.Count -eq 0) { exit 0 }
 [Win]::EnumWindows([Win+EnumWindowsProc]{
     param($hwnd, $lparam)

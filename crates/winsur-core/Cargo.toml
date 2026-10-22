@@ -1,0 +1,16 @@
+[package]
+name = "winsur-core"
+version = "0.1.1"
+edition = "2021"
+description = "Winsur session, hook, and discovery logic"
+license = "MIT"
+publish = false
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+indexmap = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tiny_http = "0.12"
+url = "2"
+uuid = { version = "1", features = ["v4"] }

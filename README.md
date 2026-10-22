@@ -3,7 +3,7 @@
 **Winsur** — multi-agent control surface for Windows.
 Run AI coding agents in the background; get interrupted only when they need you.
 
-Inspired by [Vibe Island](https://vibeisland.app) (macOS). Built for Windows with Electron.
+Inspired by [Vibe Island](https://vibeisland.app) (macOS). Built for Windows with Tauri 2 and the system WebView2.
 
 <!-- TODO: screenshot / GIF of the island expanded with a permission card goes here -->
 
@@ -13,8 +13,9 @@ Inspired by [Vibe Island](https://vibeisland.app) (macOS). Built for Windows wit
 
 | File | Use |
 |------|-----|
-| `Winsur-Setup-*.exe` | Installer — adds Start Menu and desktop shortcuts |
-| `Winsur-Portable-*.exe` | Single executable, no install |
+| `*-setup.exe` (NSIS) | Installer — current user or per-machine, Start Menu and desktop shortcuts. Installs the WebView2 bootstrapper if Windows does not already have it |
+| `*.msi` | MSI installer, same app |
+| `winsur.exe` | No-install binary from `src-tauri\target\release\`. Needs the system WebView2 runtime |
 
 Windows 10/11, x64. You do not need to clone this repo or install Node to use
 Winsur — the source is here to read, fork and contribute to.
@@ -45,8 +46,8 @@ prompt.
 Holding a tool call requires knowing how a given agent reads a hook's
 decision, so gating is currently enabled for Claude Code only. Other
 agents show activity, questions and plans, but Winsur does not decide
-for them. To gate another host, add it in `electron/hooks.cjs`
-(`GATED_TOOLS`, and the `gate` flag in `installAllHooks`).
+for them. To gate another host, add it in `crates/winsur-core/src/hooks.rs`
+(`GATED_TOOLS`, and the `gate` flag in `install_all_hooks`).
 
 ## What Winsur touches on your machine
 
@@ -55,15 +56,15 @@ Worth knowing before you run it:
 - **It edits your agents' config files.** On launch Winsur installs its hooks
   into the settings of every agent it detects — for example
   `~/.claude/settings.json` and `~/.grok/hooks/winsur.json`. Existing hooks are
-  preserved; only Winsur's own entries are rewritten. See `electron/hooks.cjs`.
+  preserved; only Winsur's own entries are rewritten. See `crates/winsur-core/src/hooks.rs`.
 - **It runs a local HTTP server** on `127.0.0.1:18900` to receive hook events.
   It binds to loopback only and sends no CORS headers, so a web page you visit
   cannot read from it.
 - **Nothing leaves your machine.** There is no telemetry and no remote endpoint.
   Agent activity stays in memory and in `~/.winsur\`.
 - **It can focus windows and send keystrokes.** "Jump to terminal" and terminal
-  replies use PowerShell and Win32 calls to target the agent's window. See
-  `hooks\` and the focus logic in `electron/`.
+  replies use Win32 (`src-tauri/src/win32.rs`) to target the agent's window.
+  Hook scripts live in `hooks\`.
 
 ## Build from source
 
@@ -78,14 +79,21 @@ Build the installers yourself:
 npm run dist
 ```
 
-Output lands in `release\`.
+`npm start` runs the Vite dev server and the Tauri shell. `npm run dist` runs
+the frontend build, then the Tauri bundler. Output lands in
+`src-tauri\target\release\bundle\` (NSIS and MSI) and
+`src-tauri\target\release\winsur.exe`.
+
+You need the Rust stable toolchain (`rustup`) and the Visual Studio C++ build
+tools. WebView2 is the Windows system webview; the NSIS installer downloads
+the bootstrapper when it is missing. The shell is not code-signed.
 
 | Command | What |
 |---------|------|
-| `npm start` | Dev mode |
+| `npm start` | Dev mode (`tauri dev`) |
 | `npm run free` | Free ports 1420 / 18900 |
 | `npm run restart` | Free ports + start |
-| `npm run dist` | Build Windows installers |
+| `npm run dist` | Build Windows NSIS + MSI (`tauri build`) |
 | `npm run lint` | ESLint |
 
 ## Config

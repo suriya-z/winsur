@@ -1,0 +1,13 @@
+name: winsur
+version: 0.1.1
+description: Forward Hermes Agent lifecycle and tool events to Winsur control surface
+author: Winsur
+kind: standalone
+manifest_version: 2
+provides_hooks:
+  - on_session_start
+  - on_session_end
+  - pre_llm_call
+  - pre_tool_call
+  - post_tool_call
+  - on_stream_end

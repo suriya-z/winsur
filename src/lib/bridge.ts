@@ -1,6 +1,8 @@
-// Platform bridge — the full Electron IPC surface behind window.winsur.
-// Was split across tauri.ts + bridge.ts; the Tauri runtime is long gone.
+// Platform bridge. The React UI calls these functions; Tauri commands and events
+// implement them. window.winsur stays installed for callers that use the global.
 
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { AgentSession, Settings, UsageRow, SshRemote } from "../types/agent";
 
@@ -28,15 +30,51 @@ declare global {
   }
 }
 
+function subscribe(channel: string, handler: (payload: unknown) => void): () => void {
+  let unlisten: UnlistenFn | null = null;
+  let cancelled = false;
+  void listen(channel, (event) => handler(event.payload)).then((fn) => {
+    if (cancelled) fn();
+    else unlisten = fn;
+  });
+  return () => {
+    cancelled = true;
+    if (unlisten) unlisten();
+  };
+}
+
+function installGlobal(): WinsurApi {
+  const api: WinsurApi = {
+    invoke: (cmd, args) => invoke(cmd, args),
+    on: (channel, handler) => subscribe(channel, handler),
+    startDragging: () => {
+      void invoke("start_dragging");
+    },
+    stopDragging: () => {
+      void invoke("stop_dragging");
+    },
+    setIgnoreMouseEvents: (ignore) => {
+      void invoke("set_ignore_mouse_events", { ignore });
+    },
+    reportIslandMetrics: (metrics) => {
+      void invoke("report_island_metrics", metrics);
+    },
+    platform: "win32",
+  };
+  window.winsur = api;
+  window.vibeIsland = api;
+  return api;
+}
+
+const bridge = installGlobal();
+
 function api(): WinsurApi {
-  if (window.winsur) return window.winsur;
-  if (window.vibeIsland) return window.vibeIsland;
-  throw new Error("Winsur bridge not available (run via Electron: npm start)");
+  return window.winsur ?? window.vibeIsland ?? bridge;
 }
 
 /** 获取所有 Agent 会话 */
 export async function getAgents(): Promise<AgentSession[]> {
-  return api().invoke("get_agents") as Promise<AgentSession[]>;
+  return invoke<AgentSession[]>("get_agents");
 }
 
 /** 响应权限请求 */
@@ -44,33 +82,28 @@ export async function respondPermission(
   sessionId: string,
   decision: "allow" | "deny"
 ): Promise<boolean> {
-  return api().invoke("respond_permission", {
-    sessionId,
-    decision,
-  }) as Promise<boolean>;
+  return invoke<boolean>("respond_permission", { sessionId, decision });
 }
 
 /** 聚焦到对应终端窗口 */
 export async function focusTerminal(
   sessionId: string
 ): Promise<boolean | { ok: boolean; detail?: string }> {
-  return api().invoke("focus_terminal", { sessionId }) as Promise<
-    boolean | { ok: boolean; detail?: string }
-  >;
+  return invoke<{ ok: boolean; detail?: string }>("focus_terminal", { sessionId });
 }
 
 /** 获取应用设置 */
 export async function getSettings(): Promise<Settings> {
-  return api().invoke("get_settings") as Promise<Settings>;
+  return invoke<Settings>("get_settings");
 }
 
 export async function saveSettings(partial: Partial<Settings>): Promise<Settings> {
-  return api().invoke("save_settings", partial as Record<string, unknown>) as Promise<Settings>;
+  return invoke<Settings>("save_settings", partial);
 }
 
 /** 从面板中移除 Agent */
 export async function dismissAgent(sessionId: string): Promise<void> {
-  await api().invoke("dismiss_agent", { sessionId });
+  await invoke("dismiss_agent", { sessionId });
 }
 
 /** 向 Agent 终端发送回复消息 */
@@ -78,9 +111,7 @@ export async function replyQuestion(
   sessionId: string,
   message: string
 ): Promise<boolean | { ok: boolean; detail?: string }> {
-  return api().invoke("reply_question", { sessionId, message }) as Promise<
-    boolean | { ok: boolean; detail?: string }
-  >;
+  return invoke<{ ok: boolean; detail?: string }>("reply_question", { sessionId, message });
 }
 
 export async function respondPlan(
@@ -88,53 +119,50 @@ export async function respondPlan(
   decision: "approve" | "feedback",
   message?: string
 ): Promise<{ ok: boolean; detail?: string }> {
-  return api().invoke("respond_plan", { sessionId, decision, message }) as Promise<{
-    ok: boolean;
-    detail?: string;
-  }>;
+  return invoke<{ ok: boolean; detail?: string }>("respond_plan", { sessionId, decision, message });
 }
 
 export async function dismissPlan(sessionId: string) {
-  return api().invoke("dismiss_plan", { sessionId });
+  return invoke("dismiss_plan", { sessionId });
 }
 
 /** 安装 Agent hooks */
 export async function installHooks(): Promise<string> {
-  return api().invoke("install_hooks") as Promise<string>;
+  return invoke<string>("install_hooks");
 }
 
 /** 卸载 Agent hooks */
 export async function uninstallHooks(): Promise<string> {
-  return api().invoke("uninstall_hooks") as Promise<string>;
+  return invoke<string>("uninstall_hooks");
 }
 
 /** 检查 hooks 安装状态 */
 export async function checkHooks(): Promise<Record<string, unknown>> {
-  return api().invoke("check_hooks") as Promise<Record<string, unknown>>;
+  return invoke<Record<string, unknown>>("check_hooks");
 }
 
 export async function getUsage(): Promise<UsageRow[]> {
-  return api().invoke("get_usage") as Promise<UsageRow[]>;
+  return invoke<UsageRow[]>("get_usage");
 }
 
 export async function sshList(): Promise<SshRemote[]> {
-  return api().invoke("ssh_list") as Promise<SshRemote[]>;
+  return invoke<SshRemote[]>("ssh_list");
 }
 
 export async function sshConnect(id: string) {
-  return api().invoke("ssh_connect", { id });
+  return invoke("ssh_connect", { id });
 }
 
 export async function sshDisconnect(id: string) {
-  return api().invoke("ssh_disconnect", { id });
+  return invoke("ssh_disconnect", { id });
 }
 
 export async function sshAdd(remote: Partial<SshRemote> & { host: string }): Promise<SshRemote[]> {
-  return api().invoke("ssh_add", remote as Record<string, unknown>) as Promise<SshRemote[]>;
+  return invoke<SshRemote[]>("ssh_add", remote);
 }
 
 export async function sshRemove(id: string): Promise<SshRemote[]> {
-  return api().invoke("ssh_remove", { id }) as Promise<SshRemote[]>;
+  return invoke<SshRemote[]>("ssh_remove", { id });
 }
 
 /** Listen for backend → UI events */
@@ -142,12 +170,18 @@ export function onAgentUpdate(handler: (session: AgentSession) => void): () => v
   return api().on("agent-update", (payload) => handler(payload as AgentSession));
 }
 
-/** Start window drag (Electron) */
+export function onAgentsSync(handler: (list: AgentSession[]) => void): () => void {
+  return api().on("agents-sync", (payload) => {
+    if (Array.isArray(payload)) handler(payload as AgentSession[]);
+  });
+}
+
+/** Start window drag */
 export function startWindowDragging(): void {
   try {
     api().startDragging();
   } catch {
-    /* ignore in pure browser */
+    /* ignore outside the shell */
   }
 }
 
@@ -160,7 +194,7 @@ export function stopWindowDragging(): void {
   }
 }
 
-/** Tell the main process the visible island box so it can size the window and hit-test. */
+/** Tell the shell the visible island box so it can size the window and hit-test. */
 export function reportIslandMetrics(metrics: {
   x: number;
   y: number;
@@ -171,11 +205,11 @@ export function reportIslandMetrics(metrics: {
   try {
     api().reportIslandMetrics?.(metrics);
   } catch {
-    /* ignore in pure browser */
+    /* ignore outside the shell */
   }
 }
 
-/** Toggle transparent click-through around the floating island */
+/** The shell polls the cursor itself. This call is accepted and ignored. */
 export function setWindowIgnoreMouseEvents(ignore: boolean): void {
   try {
     api().setIgnoreMouseEvents?.(ignore, true);
@@ -205,7 +239,6 @@ export function bindClickOrDrag(
   let dragging = false;
   const pointerId = "pointerId" in e ? e.pointerId : undefined;
 
-  // Capture so we still get up events outside the window bounds
   if (pointerId != null && target.setPointerCapture) {
     try {
       target.setPointerCapture(pointerId);
@@ -248,7 +281,6 @@ export function bindClickOrDrag(
   window.addEventListener("pointermove", onMove);
   window.addEventListener("pointerup", onUp);
   window.addEventListener("pointercancel", onUp);
-  // Fallback for environments without full pointer events
   window.addEventListener("mousemove", onMoveMouse);
   window.addEventListener("mouseup", onUp);
   window.addEventListener("blur", onUp);

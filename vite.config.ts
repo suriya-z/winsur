@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-// Vite config — Electron + React + Tailwind (no Tauri/Rust)
+// Vite config — Tauri + React + Tailwind. The shell is Rust (src-tauri/).
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   base: "./",
@@ -10,9 +10,12 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 1420,
     strictPort: true,
+    watch: {
+      ignored: ["**/src-tauri/**"],
+    },
   },
   clearScreen: false,
-  envPrefix: ["VITE_"],
+  envPrefix: ["VITE_", "TAURI_"],
   build: {
     target: "es2021",
     outDir: "dist",

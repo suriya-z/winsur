@@ -1,7 +1,7 @@
 // Agent event listening — IPC + poll + sound alerts
 
 import { useEffect, useRef } from "react";
-import { getAgents, onAgentUpdate, getSettings } from "../lib/bridge";
+import { getAgents, onAgentUpdate, onAgentsSync, getSettings } from "../lib/bridge";
 import { useAgentStore } from "../stores/agentStore";
 import { playSound, setSoundEnabled, setSoundVolume } from "../lib/sounds";
 import type { AgentSession } from "../types/agent";
@@ -48,13 +48,9 @@ export function useAgentEvents() {
       updateAgent(session);
     });
 
-    // Full list sync (deduped from backend) — fixes double cards
-    const unlistenSync =
-      window.winsur || window.vibeIsland
-        ? (window.winsur || window.vibeIsland)!.on("agents-sync", (list) => {
-            if (!cancelled && Array.isArray(list)) setAgents(list as AgentSession[]);
-          })
-        : () => {};
+    const unlistenSync = onAgentsSync((list) => {
+      if (!cancelled) setAgents(list);
+    });
 
     return () => {
       cancelled = true;

@@ -1,0 +1,31 @@
+fn main() {
+    tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
+        tauri_build::AppManifest::new().commands(&[
+            "get_agents",
+            "clear_agents",
+            "respond_permission",
+            "focus_terminal",
+            "get_settings",
+            "save_settings",
+            "get_usage",
+            "ssh_list",
+            "ssh_connect",
+            "ssh_disconnect",
+            "ssh_add",
+            "ssh_remove",
+            "ssh_deploy_script",
+            "respond_plan",
+            "dismiss_plan",
+            "dismiss_agent",
+            "reply_question",
+            "install_hooks",
+            "uninstall_hooks",
+            "check_hooks",
+            "start_dragging",
+            "stop_dragging",
+            "report_island_metrics",
+            "set_ignore_mouse_events",
+        ]),
+    ))
+    .expect("failed to run tauri-build");
+}

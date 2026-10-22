@@ -29,9 +29,9 @@ public class User32All {
     }
 }
 '@
-$pids = @(Get-Process -Name "*winsur*","*electron*" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
+$pids = @(Get-Process -Name "*winsur*" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
 if ($pids.Count -gt 0) {
     [User32All]::CheckPids([uint32[]]$pids)
 } else {
-    Write-Output "No Winsur/Electron processes running."
+    Write-Output "No Winsur processes running."
 }
