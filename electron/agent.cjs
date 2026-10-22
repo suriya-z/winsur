@@ -58,6 +58,14 @@ const EVENT_ALIASES = {
   pre_tool_use: "PreToolUse",
   post_tool_use: "PostToolUse",
   post_tool_use_failure: "PostToolUseFailure",
+  pre_tool_call: "PreToolUse",
+  post_tool_call: "PostToolUse",
+  pre_llm_call: "UserPromptSubmit",
+  post_llm_call: "PostToolUse",
+  on_session_start: "SessionStart",
+  on_session_end: "SessionEnd",
+  on_session_finalize: "Stop",
+  on_stream_end: "Stop",
   session_start: "SessionStart",
   session_end: "SessionEnd",
   user_prompt_submit: "UserPromptSubmit",
@@ -87,8 +95,11 @@ function normalizeHookPayload(raw) {
 
   if (p.hook_event_name == null && p.hookEventName != null) p.hook_event_name = p.hookEventName;
   if (p.session_id == null && p.sessionId != null) p.session_id = p.sessionId;
+  if (p.session_id == null && p.conversationId != null) p.session_id = p.conversationId;
   if (p.tool_name == null && p.toolName != null) p.tool_name = p.toolName;
+  if (p.tool_name == null && p.toolCall?.name != null) p.tool_name = p.toolCall.name;
   if (p.tool_input == null && p.toolInput != null) p.tool_input = p.toolInput;
+  if (p.tool_input == null && p.toolCall?.args != null) p.tool_input = p.toolCall.args;
   if (p.tool_response == null && p.toolResponse != null) p.tool_response = p.toolResponse;
   if (p.transcript_path == null && p.transcriptPath != null) p.transcript_path = p.transcriptPath;
   if (p.notification_type == null && p.notificationType != null)
@@ -97,6 +108,9 @@ function normalizeHookPayload(raw) {
   if (p.permission_mode == null && p.permissionMode != null) p.permission_mode = p.permissionMode;
   if (!p.cwd && p.workspaceRoot) p.cwd = p.workspaceRoot;
   if (!p.cwd && p.workspace_root) p.cwd = p.workspace_root;
+  if (!p.cwd && Array.isArray(p.workspacePaths) && p.workspacePaths.length > 0) {
+    p.cwd = p.workspacePaths[0];
+  }
 
   let ev = p.hook_event_name || p.hookEventName || "Unknown";
   if (EVENT_ALIASES[ev]) ev = EVENT_ALIASES[ev];
@@ -105,7 +119,56 @@ function normalizeHookPayload(raw) {
 }
 
 function inferAgentType(payload) {
-  const path = String(payload.transcript_path || payload.cwd || "").toLowerCase();
+  const at = String(payload.agent_type || "")
+    .toLowerCase()
+    .replace(/_/g, "-");
+  const map = {
+    "grok-build": "grok-build",
+    grok: "grok-build",
+    "claude-code": "claude-code",
+    claude: "claude-code",
+    codex: "codex",
+    "codex-cli": "codex",
+    cursor: "cursor",
+    antigravity: "antigravity",
+    "claude-desktop": "claude-desktop",
+    opencode: "opencode",
+    "qwen-code": "qwen-code",
+    qwen: "qwen-code",
+    "code-buddy": "code-buddy",
+    codebuddy: "code-buddy",
+    windsurf: "windsurf",
+    gemini: "gemini",
+    "gemini-cli": "gemini",
+    zcode: "zcode",
+    trae: "trae",
+    mimocode: "mimocode",
+    droid: "droid",
+    qoder: "qoder",
+    kimi: "kimi",
+    deepseek: "deepseek",
+    mistral: "mistral",
+    copilot: "copilot",
+    "github-copilot": "copilot",
+    workbuddy: "workbuddy",
+    kiro: "kiro",
+    hermes: "hermes",
+    amp: "amp",
+    "pi-agent": "pi-agent",
+    pi: "pi-agent",
+    "oh-my-pi": "oh-my-pi",
+    gajae: "gajae",
+  };
+  if (map[at]) return map[at];
+
+  if (payload.conversationId != null || payload.toolCall != null || payload.artifactDirectoryPath != null) {
+    return "antigravity";
+  }
+  if (payload.delivery_id != null && payload.profile != null) {
+    return "hermes";
+  }
+
+  const tpath = String(payload.transcript_path || payload.cwd || "").toLowerCase();
   const checks = [
     [".grok", "grok-build"],
     ["grok", "grok-build"],
@@ -125,41 +188,22 @@ function inferAgentType(payload) {
     ["kimi", "kimi"],
     ["deepseek", "deepseek"],
     ["mistral", "mistral"],
+    ["hermes", "hermes"],
+    ["copilot", "copilot"],
+    ["kiro", "kiro"],
   ];
   for (const [needle, id] of checks) {
-    if (path.includes(needle)) return id;
+    if (tpath.includes(needle)) return id;
   }
 
   if (payload.permission_mode != null && payload.workspaceRoot == null) return "claude-code";
 
-  const at = String(payload.agent_type || "")
-    .toLowerCase()
-    .replace(/_/g, "-");
-  const map = {
-    "grok-build": "grok-build",
-    grok: "grok-build",
-    "claude-code": "claude-code",
-    codex: "codex",
-    cursor: "cursor",
-    antigravity: "antigravity",
-    "claude-desktop": "claude-desktop",
-    opencode: "opencode",
-    "qwen-code": "qwen-code",
-    qwen: "qwen-code",
-    "code-buddy": "code-buddy",
-    windsurf: "windsurf",
-    gemini: "gemini",
-    kimi: "kimi",
-    deepseek: "deepseek",
-    mistral: "mistral",
-  };
-  if (map[at]) return map[at];
-
-  const model = String(payload.model || "").toLowerCase();
+  const model = String(payload.model || payload.modelName || "").toLowerCase();
   if (model.includes("grok")) return "grok-build";
   if (model.includes("claude")) return "claude-code";
   if (model.includes("gpt") || model.includes("codex")) return "codex";
   if (model.includes("gemini")) return "gemini";
+  if (model.includes("qwen")) return "qwen-code";
 
   if (payload.sessionId != null || payload.workspaceRoot != null) return "grok-build";
   return "unknown";

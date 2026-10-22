@@ -9,6 +9,7 @@ type WinsurApi = {
   on: (channel: string, handler: (payload: unknown) => void) => () => void;
   startDragging: () => void;
   stopDragging?: () => void;
+  setIgnoreMouseEvents?: (ignore: boolean, forward?: boolean) => void;
   platform?: string;
 };
 
@@ -147,6 +148,15 @@ export function startWindowDragging(): void {
 export function stopWindowDragging(): void {
   try {
     api().stopDragging?.();
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Toggle transparent click-through around the floating island */
+export function setWindowIgnoreMouseEvents(ignore: boolean): void {
+  try {
+    api().setIgnoreMouseEvents?.(ignore, true);
   } catch {
     /* ignore */
   }

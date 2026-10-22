@@ -7,7 +7,9 @@
 
 param(
     [Parameter(Position = 0)]
-    [string]$EventName = "Unknown"
+    [string]$EventName = "Unknown",
+    [Parameter(Position = 1)]
+    [string]$HostHint = ""
 )
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -58,6 +60,30 @@ if ($payload.notificationType -and -not $payload.notification_type) {
     Ensure-Prop $payload "notification_type" $payload.notificationType
 }
 
+# Antigravity normalization
+if ($payload.conversationId -and -not $payload.session_id) {
+    Ensure-Prop $payload "session_id" $payload.conversationId
+}
+if ($payload.toolCall) {
+    if ($payload.toolCall.name -and -not $payload.tool_name) {
+        Ensure-Prop $payload "tool_name" $payload.toolCall.name
+    }
+    if ($payload.toolCall.args -and -not $payload.tool_input) {
+        Ensure-Prop $payload "tool_input" $payload.toolCall.args
+    }
+}
+if ($payload.workspacePaths -and -not $payload.cwd) {
+    $w = $payload.workspacePaths
+    if ($w -is [System.Collections.IEnumerable] -and -not ($w -is [string])) {
+        foreach ($first in $w) { Ensure-Prop $payload "cwd" $first; break }
+    } else {
+        Ensure-Prop $payload "cwd" $w
+    }
+}
+if (-not $payload.agent_type -and ($payload.conversationId -or $payload.toolCall)) {
+    Ensure-Prop $payload "agent_type" "antigravity"
+}
+
 # Event name (CLI arg or payload or env)
 $resolvedEvent = $EventName
 if ($resolvedEvent -eq "Unknown" -or -not $resolvedEvent) {
@@ -90,9 +116,14 @@ Ensure-Prop $payload "cwd" $cwd
 # Agent type
 $agentType = "unknown"
 if ($payload.agent_type) { $agentType = $payload.agent_type }
+elseif ($HostHint -and $HostHint -ne "") { $agentType = $HostHint }
+elseif ($payload.conversationId -or $payload.toolCall) { $agentType = "antigravity" }
+elseif ($payload.profile -and $payload.delivery_id) { $agentType = "hermes" }
 elseif ($env:GROK_SESSION_ID -or $env:GROK_HOOK_EVENT -or $env:GROK_WORKSPACE_ROOT) { $agentType = "grok-build" }
 elseif ($env:CLAUDE_SESSION_ID) { $agentType = "claude-code" }
 elseif ($env:CODEX_SESSION_ID) { $agentType = "codex" }
+elseif ($env:QWEN_SESSION_ID) { $agentType = "qwen-code" }
+elseif ($env:GEMINI_SESSION_ID) { $agentType = "gemini" }
 Ensure-Prop $payload "agent_type" $agentType
 
 # Always non-blocking status endpoint (never hang agent tools)
@@ -103,6 +134,18 @@ try {
     Invoke-RestMethod -Uri $endpoint -Method Post -Body $jsonBody -ContentType "application/json; charset=utf-8" -TimeoutSec $TIMEOUT_SEC | Out-Null
 } catch {
     # Island offline - fail open
+}
+
+# Antigravity requires valid JSON on stdout for every hook event
+if ($agentType -eq "antigravity" -or $payload.conversationId -or $payload.toolCall) {
+    if ($resolvedEvent -eq "PreToolUse") {
+        Write-Output '{"decision":"allow"}'
+    } elseif ($resolvedEvent -eq "Stop") {
+        Write-Output '{"decision":"stop"}'
+    } else {
+        Write-Output '{}'
+    }
+    exit 0
 }
 
 # Report only. Exiting 0 with no output means "no decision", which leaves the

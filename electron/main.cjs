@@ -60,7 +60,7 @@ async function releaseIslandForInput() {
 async function restoreIsland({ focus = true } = {}) {
   try {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setIgnoreMouseEvents(false);
+      mainWindow.setIgnoreMouseEvents(true, { forward: true });
       mainWindow.setAlwaysOnTop(true, "screen-saver");
       if (focus) {
         mainWindow.show();
@@ -117,18 +117,63 @@ function createWindow() {
     title: "Winsur",
   });
 
-  mainWindow.setAlwaysOnTop(true, "screen-saver");
-  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  console.log(`[Winsur] createWindow: x=${x}, y=${y}, winW=${winW}, winH=${winH}, DEV_URL=${DEV_URL}, isDev=${isDev}`);
 
+  try {
+    mainWindow.setAlwaysOnTop(true, "screen-saver");
+  } catch {
+    try { mainWindow.setAlwaysOnTop(true); } catch {}
+  }
+  try {
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  } catch {}
+
+  mainWindow.webContents.on("did-finish-load", () => {
+    console.log("[Winsur] webContents did-finish-load");
+  });
+  mainWindow.webContents.on("did-fail-load", (_e, code, desc, url) => {
+    console.error(`[Winsur] webContents did-fail-load (${code}): ${desc} -> ${url}`);
+  });
+  mainWindow.webContents.on("render-process-gone", (_e, details) => {
+    console.error("[Winsur] renderer gone:", details);
+  });
+  mainWindow.webContents.on("console-message", (_e, level, message, line, sourceId) => {
+    console.log(`[Renderer ${level}] ${message} (${sourceId}:${line})`);
+  });
+
+  const distHtml = path.join(__dirname, "..", "dist", "index.html");
   if (isDev) {
-    mainWindow.loadURL(DEV_URL);
+    mainWindow.loadURL(DEV_URL).catch(() => {
+      if (mainWindow && !mainWindow.isDestroyed() && fs.existsSync(distHtml)) {
+        console.log("[Winsur] Dev server unavailable -> falling back to dist/index.html");
+        mainWindow.loadFile(distHtml).catch(() => {});
+      }
+    });
   } else {
-    mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+    mainWindow.loadFile(distHtml);
   }
 
+  // Pass clicks through transparent background around the capsule by default
+  try {
+    mainWindow.setIgnoreMouseEvents(true, { forward: true });
+  } catch {}
+
   mainWindow.once("ready-to-show", () => {
+    console.log("[Winsur] ready-to-show fired -> showing window");
     mainWindow.show();
     mainWindow.focus();
+  });
+
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+      console.log("[Winsur] Fallback timeout -> forcing mainWindow.show()");
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  }, 2000);
+
+  mainWindow.on("show", () => {
+    console.log("[Winsur] mainWindow 'show' event fired! Visible:", mainWindow.isVisible());
   });
 
   mainWindow.on("closed", () => {
@@ -137,54 +182,68 @@ function createWindow() {
 }
 
 function createTray() {
-  let icon;
-  const iconPath = path.join(__dirname, "..", "assets", "icons", "32x32.png");
-  try {
-    icon = nativeImage.createFromPath(iconPath);
-    if (icon.isEmpty()) throw new Error("empty");
-  } catch {
-    icon = nativeImage.createEmpty();
+  let icon = nativeImage.createEmpty();
+  const candidates = [
+    path.join(__dirname, "..", "assets", "icons", "icon.ico"),
+    path.join(__dirname, "..", "assets", "icons", "32x32.png"),
+    path.join(__dirname, "..", "build", "icon.ico"),
+    path.join(__dirname, "..", "build", "icon.png"),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) {
+        const loaded = nativeImage.createFromPath(p);
+        if (!loaded.isEmpty()) {
+          icon = loaded.resize({ width: 16, height: 16 });
+          break;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (icon.isEmpty()) {
+    icon = nativeImage.createFromDataURL(
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAFUlEQVQ4T2NkYGD4z0ABYBw1gGE0DAB9iAABfuXzWQAAAABJRU5ErkJggg=="
+    );
   }
 
-  tray = new Tray(
-    icon.isEmpty()
-      ? nativeImage.createFromDataURL(
-          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAFUlEQVQ4T2NkYGD4z0ABYBw1gGE0DAB9iAABfuXzWQAAAABJRU5ErkJggg=="
-        )
-      : icon
-  );
-
-  const menu = Menu.buildFromTemplate([
-    {
-      label: "Show / Hide",
-      click: () => {
-        if (!mainWindow) return;
-        if (mainWindow.isVisible()) mainWindow.hide();
-        else {
-          mainWindow.show();
-          mainWindow.focus();
-        }
+  try {
+    tray = new Tray(icon);
+    const menu = Menu.buildFromTemplate([
+      {
+        label: "Show / Hide",
+        click: () => {
+          if (!mainWindow) return;
+          if (mainWindow.isVisible()) mainWindow.hide();
+          else {
+            mainWindow.show();
+            mainWindow.focus();
+          }
+        },
       },
-    },
-    { type: "separator" },
-    {
-      label: "Quit",
-      click: () => {
-        app.isQuitting = true;
-        app.quit();
+      { type: "separator" },
+      {
+        label: "Quit",
+        click: () => {
+          app.isQuitting = true;
+          app.quit();
+        },
       },
-    },
-  ]);
-  tray.setToolTip("Winsur");
-  tray.setContextMenu(menu);
-  tray.on("click", () => {
-    if (!mainWindow) return;
-    if (mainWindow.isVisible()) mainWindow.hide();
-    else {
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  });
+    ]);
+    tray.setToolTip("Winsur");
+    tray.setContextMenu(menu);
+    tray.on("click", () => {
+      if (!mainWindow) return;
+      if (mainWindow.isVisible()) mainWindow.hide();
+      else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+  } catch (e) {
+    console.warn("[Winsur] Tray creation warning:", e.message || e);
+  }
 }
 
 function notify(title, body) {
@@ -461,10 +520,28 @@ function wireIpc(sessionManager) {
     dragSafety = setTimeout(stopWindowDrag, 15000);
   }
 
-  ipcMain.on("winsur:start-dragging", startDrag);
+  ipcMain.on("winsur:start-dragging", () => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setIgnoreMouseEvents(false);
+      }
+    } catch {}
+    startDrag();
+  });
   ipcMain.on("vibe:start-dragging", startDrag);
   ipcMain.on("winsur:stop-dragging", stopWindowDrag);
   ipcMain.on("vibe:stop-dragging", stopWindowDrag);
+  ipcMain.on("winsur:set-ignore-mouse-events", (_event, { ignore, forward = true } = {}) => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed() && !dragState) {
+        if (ignore) {
+          mainWindow.setIgnoreMouseEvents(true, { forward: !!forward });
+        } else {
+          mainWindow.setIgnoreMouseEvents(false);
+        }
+      }
+    } catch {}
+  });
 }
 
 if (gotLock) {
@@ -501,9 +578,17 @@ if (gotLock) {
     // Always rewrite Grok hooks to HTTP-only (kills dual HTTP+PS1 double cards)
     autoInstallOnLaunch();
 
-    wireIpc(hookServer.sessionManager);
-    createWindow();
-    createTray();
+    try {
+      console.log("[Winsur] Wiring IPC...");
+      wireIpc(hookServer.sessionManager);
+      console.log("[Winsur] Creating window...");
+      createWindow();
+      console.log("[Winsur] Creating tray...");
+      createTray();
+      console.log("[Winsur] Setup completed.");
+    } catch (e) {
+      console.error("[Winsur] Setup error:", e);
+    }
   });
 
   app.on("window-all-closed", () => {

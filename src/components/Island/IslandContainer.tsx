@@ -4,9 +4,9 @@
 //   完成通知 → 绿色闪烁一次 (island-done-flash)
 //   默认 → 静态
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { bindClickOrDrag, stopWindowDragging } from "../../lib/bridge";
+import { bindClickOrDrag, stopWindowDragging, setWindowIgnoreMouseEvents } from "../../lib/bridge";
 import { useAgentStore } from "../../stores/agentStore";
 import { CollapsedView } from "./CollapsedView";
 import { ExpandedView } from "./ExpandedView";
@@ -21,14 +21,36 @@ export function IslandContainer() {
   const clearNotify = useAgentStore((s) => s.clearNotify);
   const toggleExpanded = useAgentStore((s) => s.toggleExpanded);
   const agents = useAgentStore((s) => s.agents);
+  const islandRef = useRef<HTMLDivElement>(null);
 
-  // Safety: always kill drag if window blurs / tab hides
+  // Safety: always kill drag if window blurs / tab hides, and pass mouse clicks through transparent background
   useEffect(() => {
+    let ignoring = true;
+    setWindowIgnoreMouseEvents(true);
+
+    const onMouseMove = (e: MouseEvent) => {
+      const el = islandRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const inside =
+        e.clientX >= rect.left - 4 &&
+        e.clientX <= rect.right + 4 &&
+        e.clientY >= rect.top - 4 &&
+        e.clientY <= rect.bottom + 4;
+      const nextIgnore = !inside;
+      if (nextIgnore !== ignoring) {
+        ignoring = nextIgnore;
+        setWindowIgnoreMouseEvents(nextIgnore);
+      }
+    };
+
     const stop = () => stopWindowDragging();
+    window.addEventListener("mousemove", onMouseMove, { passive: true });
     window.addEventListener("blur", stop);
     window.addEventListener("mouseup", stop);
     window.addEventListener("pointerup", stop);
     return () => {
+      window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("blur", stop);
       window.removeEventListener("mouseup", stop);
       window.removeEventListener("pointerup", stop);
@@ -76,6 +98,7 @@ export function IslandContainer() {
 
   return (
     <motion.div
+      ref={islandRef}
       layout
       onPointerDown={handlePointerDown}
       animate={{

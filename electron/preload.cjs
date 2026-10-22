@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld("winsur", {
   },
   startDragging: () => ipcRenderer.send("winsur:start-dragging"),
   stopDragging: () => ipcRenderer.send("winsur:stop-dragging"),
+  setIgnoreMouseEvents: (ignore, forward = true) =>
+    ipcRenderer.send("winsur:set-ignore-mouse-events", { ignore: !!ignore, forward: !!forward }),
   platform: process.platform,
 });
 // Back-compat alias during transition
@@ -23,5 +25,7 @@ contextBridge.exposeInMainWorld("vibeIsland", {
   },
   startDragging: () => ipcRenderer.send("winsur:start-dragging"),
   stopDragging: () => ipcRenderer.send("winsur:stop-dragging"),
+  setIgnoreMouseEvents: (ignore, forward = true) =>
+    ipcRenderer.send("winsur:set-ignore-mouse-events", { ignore: !!ignore, forward: !!forward }),
   platform: process.platform,
 });

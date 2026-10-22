@@ -35,6 +35,7 @@ function getAgentHosts() {
     kind: a.kind || "settings",
     typeId: a.typeId,
     detectDirs: a.detectDirs || [],
+    binNames: a.binNames || [],
   }));
 }
 
@@ -54,20 +55,43 @@ function getHookScriptPath() {
   return fs.existsSync(p) ? p : null;
 }
 
-function isDetected(host) {
-  if (host.configPath && fs.existsSync(host.configPath)) return true;
-  if (host.configPath) {
-    const parent = path.dirname(host.configPath);
-    if (fs.existsSync(parent)) return true;
-  }
-  for (const d of host.detectDirs || []) {
-    if (d && fs.existsSync(d)) return true;
+function findBinInPath(binNames) {
+  if (!Array.isArray(binNames) || !binNames.length) return false;
+  const pathEnv = process.env.PATH || "";
+  const dirs = pathEnv.split(path.delimiter).filter(Boolean);
+  const appDataNpm = process.env.APPDATA ? path.join(process.env.APPDATA, "npm") : null;
+  if (appDataNpm && !dirs.includes(appDataNpm)) dirs.push(appDataNpm);
+
+  const exts = process.platform === "win32" ? [".exe", ".cmd", ".ps1", ".bat", ""] : [""];
+  for (const bin of binNames) {
+    for (const dir of dirs) {
+      for (const ext of exts) {
+        try {
+          if (fs.existsSync(path.join(dir, bin + ext))) return true;
+        } catch {
+          /* ignore */
+        }
+      }
+    }
   }
   return false;
 }
 
-function hookCommand(scriptPath, eventName) {
-  return `powershell -ExecutionPolicy Bypass -NoProfile -File "${scriptPath}" ${eventName}`;
+function isDetected(host) {
+  if (host.configPath && fs.existsSync(host.configPath)) return true;
+  for (const d of host.detectDirs || []) {
+    if (d && fs.existsSync(d)) return true;
+  }
+  if (findBinInPath(host.binNames)) return true;
+  return false;
+}
+
+function hookCommand(scriptPath, eventName, hostTypeId) {
+  const suffix = hostTypeId ? ` ${hostTypeId}` : "";
+  if (scriptPath.includes(" ")) {
+    return `powershell -ExecutionPolicy Bypass -NoProfile -Command "& '${scriptPath}' ${eventName}${suffix}"`;
+  }
+  return `powershell -ExecutionPolicy Bypass -NoProfile -File ${scriptPath} ${eventName}${suffix}`;
 }
 
 /**
@@ -93,10 +117,20 @@ function buildHttpHooks(gate) {
   return hooks;
 }
 
-function buildCommandHooks(scriptPath) {
+function buildCommandHooks(scriptPath, hostTypeId) {
   const hooks = {};
   for (const e of HOOK_EVENTS) {
-    hooks[e] = [{ hooks: [{ type: "command", command: hookCommand(scriptPath, e) }] }];
+    hooks[e] = [
+      {
+        hooks: [
+          {
+            type: "command",
+            command: hookCommand(scriptPath, e, hostTypeId),
+            commandWindows: hookCommand(scriptPath, e, hostTypeId),
+          },
+        ],
+      },
+    ];
   }
   return hooks;
 }
@@ -104,10 +138,12 @@ function buildCommandHooks(scriptPath) {
 /** True for a handler this app installed (any generation of it). */
 function isWinsurHandler(handler) {
   const cmd = String(handler?.command || "");
+  const cmdWin = String(handler?.commandWindows || "");
   const url = String(handler?.url || "");
   return (
     cmd.includes("vibe-island") ||
     cmd.includes("winsur-hook") ||
+    cmdWin.includes("winsur-hook") ||
     url.includes("18900")
   );
 }
@@ -184,7 +220,7 @@ function installCursorHooks(configPath, hookScript) {
     }
   }
   // Cursor often uses top-level event keys or hooks object
-  const commandHooks = buildCommandHooks(hookScript);
+  const commandHooks = buildCommandHooks(hookScript, "cursor");
   if (!existing.hooks) existing.hooks = {};
   for (const [ev, groups] of Object.entries(commandHooks)) {
     existing.hooks[ev] = [...stripWinsurHooks(existing.hooks[ev]), ...groups];
@@ -192,7 +228,403 @@ function installCursorHooks(configPath, hookScript) {
   fs.writeFileSync(configPath, JSON.stringify(existing, null, 2), "utf8");
 }
 
-function installHooksToConfig(configPath, hookScript, hooksKey, preferHttp, gate) {
+function installCodexHooks(configPath, hookScript) {
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  let existing = {};
+  if (fs.existsSync(configPath)) {
+    try {
+      existing = JSON.parse(fs.readFileSync(configPath, "utf8") || "{}");
+    } catch {
+      existing = {};
+    }
+  }
+  if (!existing.hooks || typeof existing.hooks !== "object") {
+    existing.hooks = {};
+  }
+  const codexEvents = [
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "Stop",
+    "SessionEnd",
+  ];
+  for (const ev of codexEvents) {
+    const cmd = hookCommand(hookScript, ev, "codex");
+    const group = {
+      hooks: [
+        {
+          type: "command",
+          command: cmd,
+          commandWindows: cmd,
+          timeout: EVENT_TIMEOUT_SEC,
+        },
+      ],
+    };
+    existing.hooks[ev] = [...stripWinsurHooks(existing.hooks[ev]), group];
+  }
+  fs.writeFileSync(configPath, JSON.stringify(existing, null, 2), "utf8");
+}
+
+function installAntigravityHooks(configPath, hookScript) {
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  let existing = {};
+  if (fs.existsSync(configPath)) {
+    try {
+      existing = JSON.parse(fs.readFileSync(configPath, "utf8") || "{}");
+    } catch {
+      existing = {};
+    }
+  }
+  const cmd = (ev) => hookCommand(hookScript, ev, "antigravity");
+  existing.winsur = {
+    PreToolUse: [
+      {
+        matcher: ".*",
+        hooks: [{ type: "command", command: cmd("PreToolUse") }],
+      },
+    ],
+    PostToolUse: [
+      {
+        matcher: ".*",
+        hooks: [{ type: "command", command: cmd("PostToolUse") }],
+      },
+    ],
+    PreInvocation: [
+      {
+        type: "command",
+        command: cmd("SessionStart"),
+      },
+    ],
+    Stop: [
+      {
+        type: "command",
+        command: cmd("Stop"),
+      },
+    ],
+  };
+  fs.writeFileSync(configPath, JSON.stringify(existing, null, 2), "utf8");
+}
+
+function uninstallAntigravityHooks(configPath) {
+  if (!configPath || !fs.existsSync(configPath)) return;
+  try {
+    const existing = JSON.parse(fs.readFileSync(configPath, "utf8") || "{}");
+    if (existing.winsur) {
+      delete existing.winsur;
+      fs.writeFileSync(configPath, JSON.stringify(existing, null, 2), "utf8");
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function buildOpenCodePluginSource() {
+  return `// Winsur zero-config plugin for OpenCode
+const HOOK_URL = "${HOOK_URL}";
+
+async function postWinsur(payload) {
+  try {
+    await fetch(HOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(3000),
+    });
+  } catch {
+    // Winsur offline — fail open
+  }
+}
+
+export default async ({ directory, worktree }) => {
+  const cwd = directory || worktree || process.cwd();
+  void postWinsur({
+    hook_event_name: "SessionStart",
+    session_id: "opencode-" + Buffer.from(String(cwd)).toString("hex").slice(0, 16),
+    cwd,
+    agent_type: "opencode",
+  });
+
+  return {
+    "chat.message": async (input) => {
+      await postWinsur({
+        hook_event_name: "UserPromptSubmit",
+        session_id: input?.sessionID || "opencode",
+        cwd,
+        agent_type: "opencode",
+      });
+    },
+    "tool.execute.before": async (input, output) => {
+      await postWinsur({
+        hook_event_name: "PreToolUse",
+        session_id: input?.sessionID || "opencode",
+        tool_name: input?.tool || "tool",
+        tool_input: output?.args || {},
+        cwd,
+        agent_type: "opencode",
+      });
+    },
+    "tool.execute.after": async (input) => {
+      await postWinsur({
+        hook_event_name: "PostToolUse",
+        session_id: input?.sessionID || "opencode",
+        tool_name: input?.tool || "tool",
+        cwd,
+        agent_type: "opencode",
+      });
+    },
+    "permission.ask": async (input) => {
+      await postWinsur({
+        hook_event_name: "Notification",
+        notification_type: "permission_prompt",
+        session_id: input?.sessionID || "opencode",
+        title: input?.title || "Permission",
+        message: input?.title || "OpenCode needs permission",
+        cwd,
+        agent_type: "opencode",
+      });
+    },
+    event: async ({ event }) => {
+      const t = String(event?.type || "");
+      if (t === "session.idle" || t === "session.status") {
+        const isIdle = t === "session.idle" || event?.properties?.status?.type === "idle";
+        if (isIdle) {
+          await postWinsur({
+            hook_event_name: "Stop",
+            session_id: event?.properties?.sessionID || "opencode",
+            cwd,
+            agent_type: "opencode",
+          });
+        }
+      }
+    },
+  };
+};
+`;
+}
+
+function installOpenCodeHooks(pluginFilePath) {
+  const pluginsDir = path.dirname(pluginFilePath);
+  fs.mkdirSync(pluginsDir, { recursive: true });
+  fs.writeFileSync(pluginFilePath, buildOpenCodePluginSource(), "utf8");
+
+  const configDir = path.dirname(pluginsDir);
+  const jsoncPath = path.join(configDir, "opencode.jsonc");
+  const fileUrl = "file:///" + pluginFilePath.replace(/\\/g, "/");
+  if (fs.existsSync(jsoncPath)) {
+    try {
+      const raw = fs.readFileSync(jsoncPath, "utf8");
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed.plugin)) parsed.plugin = [];
+      if (!parsed.plugin.some((p) => String(p).includes("winsur"))) {
+        parsed.plugin.push(fileUrl);
+        fs.writeFileSync(jsoncPath, JSON.stringify(parsed, null, 2), "utf8");
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function uninstallOpenCodeHooks(pluginFilePath) {
+  if (pluginFilePath && fs.existsSync(pluginFilePath)) {
+    try {
+      fs.unlinkSync(pluginFilePath);
+    } catch {
+      /* ignore */
+    }
+  }
+  const configDir = path.dirname(path.dirname(pluginFilePath));
+  const jsoncPath = path.join(configDir, "opencode.jsonc");
+  if (fs.existsSync(jsoncPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(jsoncPath, "utf8"));
+      if (Array.isArray(parsed.plugin)) {
+        parsed.plugin = parsed.plugin.filter((p) => !String(p).includes("winsur"));
+        fs.writeFileSync(jsoncPath, JSON.stringify(parsed, null, 2), "utf8");
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function buildHermesPluginManifest() {
+  return `name: winsur
+version: 0.1.1
+description: Forward Hermes Agent lifecycle and tool events to Winsur control surface
+author: Winsur
+kind: standalone
+manifest_version: 2
+provides_hooks:
+  - on_session_start
+  - on_session_end
+  - pre_llm_call
+  - pre_tool_call
+  - post_tool_call
+  - on_stream_end
+`;
+}
+
+function buildHermesPluginInit() {
+  return `"""Winsur bridge plugin for Hermes Agent."""
+
+from __future__ import annotations
+
+import json
+import os
+import threading
+from pathlib import Path
+from urllib import request as urlrequest
+
+HOOK_URL = "${HOOK_URL}"
+
+
+def _post_event(payload: dict) -> None:
+    def _send():
+        try:
+            body = json.dumps(payload, default=str).encode("utf-8")
+            req = urlrequest.Request(
+                HOOK_URL,
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urlrequest.urlopen(req, timeout=2.5):
+                pass
+        except Exception:
+            pass
+
+    threading.Thread(target=_send, daemon=True).start()
+
+
+def _cwd(kwargs: dict) -> str:
+    c = kwargs.get("cwd")
+    if c:
+        return str(c)
+    try:
+        return str(Path.cwd())
+    except Exception:
+        return os.environ.get("USERPROFILE", "")
+
+
+def _sid(kwargs: dict) -> str:
+    return str(
+        kwargs.get("session_id")
+        or kwargs.get("parent_session_id")
+        or "hermes-main"
+    )
+
+
+def register(ctx) -> None:
+    def on_session_start(**kwargs):
+        _post_event({
+            "hook_event_name": "SessionStart",
+            "session_id": _sid(kwargs),
+            "cwd": _cwd(kwargs),
+            "agent_type": "hermes",
+        })
+
+    def pre_llm_call(**kwargs):
+        _post_event({
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": _sid(kwargs),
+            "cwd": _cwd(kwargs),
+            "agent_type": "hermes",
+        })
+
+    def pre_tool_call(**kwargs):
+        _post_event({
+            "hook_event_name": "PreToolUse",
+            "session_id": _sid(kwargs),
+            "tool_name": kwargs.get("tool_name") or "tool",
+            "tool_input": kwargs.get("args") if isinstance(kwargs.get("args"), dict) else {},
+            "cwd": _cwd(kwargs),
+            "agent_type": "hermes",
+        })
+
+    def post_tool_call(**kwargs):
+        _post_event({
+            "hook_event_name": "PostToolUse",
+            "session_id": _sid(kwargs),
+            "tool_name": kwargs.get("tool_name") or "tool",
+            "cwd": _cwd(kwargs),
+            "agent_type": "hermes",
+        })
+
+    def on_stream_end(**kwargs):
+        _post_event({
+            "hook_event_name": "Stop",
+            "session_id": _sid(kwargs),
+            "cwd": _cwd(kwargs),
+            "agent_type": "hermes",
+        })
+
+    def on_session_end(**kwargs):
+        _post_event({
+            "hook_event_name": "SessionEnd",
+            "session_id": _sid(kwargs),
+            "cwd": _cwd(kwargs),
+            "agent_type": "hermes",
+        })
+
+    ctx.register_hook("on_session_start", on_session_start)
+    ctx.register_hook("pre_llm_call", pre_llm_call)
+    ctx.register_hook("pre_tool_call", pre_tool_call)
+    ctx.register_hook("post_tool_call", post_tool_call)
+    ctx.register_hook("on_stream_end", on_stream_end)
+    ctx.register_hook("on_session_end", on_session_end)
+`;
+}
+
+function ensureHermesYamlConfig(hermesHome) {
+  const cfgPath = path.join(hermesHome, "config.yaml");
+  if (!fs.existsSync(cfgPath)) return;
+  try {
+    let text = fs.readFileSync(cfgPath, "utf8");
+    if (text.includes("- winsur") || text.includes('"winsur"')) return;
+
+    if (/^plugins:\s*$/m.test(text)) {
+      text = text.replace(/^plugins:\s*$/m, "plugins:\n  enabled:\n    - winsur");
+    } else {
+      text += "\nplugins:\n  enabled:\n    - winsur\n";
+    }
+    fs.writeFileSync(cfgPath, text, "utf8");
+  } catch {
+    /* ignore */
+  }
+}
+
+function installHermesHooks(pluginInitPath) {
+  const pluginDir = path.dirname(pluginInitPath);
+  const hermesHome = path.dirname(path.dirname(pluginDir));
+  fs.mkdirSync(pluginDir, { recursive: true });
+  fs.writeFileSync(path.join(pluginDir, "plugin.yaml"), buildHermesPluginManifest(), "utf8");
+  fs.writeFileSync(pluginInitPath, buildHermesPluginInit(), "utf8");
+  ensureHermesYamlConfig(hermesHome);
+
+  const dotHermes = path.join(process.env.USERPROFILE || process.env.HOME || "", ".hermes");
+  if (fs.existsSync(dotHermes) && path.resolve(dotHermes) !== path.resolve(hermesHome)) {
+    const altDir = path.join(dotHermes, "plugins", "winsur");
+    fs.mkdirSync(altDir, { recursive: true });
+    fs.writeFileSync(path.join(altDir, "plugin.yaml"), buildHermesPluginManifest(), "utf8");
+    fs.writeFileSync(path.join(altDir, "__init__.py"), buildHermesPluginInit(), "utf8");
+    ensureHermesYamlConfig(dotHermes);
+  }
+}
+
+function uninstallHermesHooks(pluginInitPath) {
+  const pluginDir = path.dirname(pluginInitPath);
+  if (fs.existsSync(pluginDir)) {
+    try {
+      fs.rmSync(pluginDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function installHooksToConfig(configPath, hookScript, hooksKey, preferHttp, gate, hostTypeId) {
   let settings = {};
   if (fs.existsSync(configPath)) {
     try {
@@ -204,7 +636,9 @@ function installHooksToConfig(configPath, hookScript, hooksKey, preferHttp, gate
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
   }
 
-  const hooks = preferHttp ? buildHttpHooks(gate) : buildCommandHooks(hookScript);
+  const hooks = preferHttp
+    ? buildHttpHooks(gate)
+    : buildCommandHooks(hookScript, hostTypeId);
   if (!settings[hooksKey] || typeof settings[hooksKey] !== "object") {
     settings[hooksKey] = {};
   }
@@ -253,6 +687,14 @@ function installAllHooks() {
         installGrokHooks(host.configPath);
       } else if (host.kind === "cursor") {
         installCursorHooks(host.configPath, hookScript);
+      } else if (host.kind === "codex") {
+        installCodexHooks(host.configPath, hookScript);
+      } else if (host.kind === "antigravity") {
+        installAntigravityHooks(host.configPath, hookScript);
+      } else if (host.kind === "opencode") {
+        installOpenCodeHooks(host.configPath);
+      } else if (host.kind === "hermes") {
+        installHermesHooks(host.configPath);
       } else {
         const preferHttp =
           host.key === "claude_code" ||
@@ -262,7 +704,14 @@ function installAllHooks() {
         // the only host whose tool calls we actually hold. Everything else
         // reports activity and falls through to its own permission flow.
         const gate = host.key === "claude_code";
-        installHooksToConfig(host.configPath, hookScript, host.hooksKey, preferHttp, gate);
+        installHooksToConfig(
+          host.configPath,
+          hookScript,
+          host.hooksKey,
+          preferHttp,
+          gate,
+          host.typeId
+        );
       }
       installed.push(host.name);
     } catch (e) {
@@ -272,7 +721,7 @@ function installAllHooks() {
 
   const parts = [];
   if (installed.length) parts.push(`Installed: ${installed.join(", ")}`);
-  if (skipped.length) parts.push(`Not detected (${skipped.length}): ${skipped.slice(0, 8).join(", ")}${skipped.length > 8 ? "…" : ""}`);
+  if (skipped.length) parts.push(`Not detected (${skipped.length}): ${skipped.slice(0, 8).join(", ")}${skipped.length > 8 ? "..." : ""}`);
   if (errors.length) parts.push(`Failed: ${errors.join("; ")}`);
   const msg = parts.join("\n") || "Nothing to install";
   if (!installed.length && errors.length) throw new Error(msg);
@@ -287,6 +736,15 @@ function uninstallAllHooks() {
     try {
       if (host.kind === "grok" && fs.existsSync(host.configPath)) {
         fs.unlinkSync(host.configPath);
+        uninstalled.push(host.name);
+      } else if (host.kind === "antigravity") {
+        uninstallAntigravityHooks(host.configPath);
+        uninstalled.push(host.name);
+      } else if (host.kind === "opencode") {
+        uninstallOpenCodeHooks(host.configPath);
+        uninstalled.push(host.name);
+      } else if (host.kind === "hermes") {
+        uninstallHermesHooks(host.configPath);
         uninstalled.push(host.name);
       } else {
         uninstallFromConfig(host.configPath, host.hooksKey);
@@ -318,7 +776,8 @@ function checkHooksStatus() {
           content.includes("vibe-island") ||
           content.includes("winsur-hook") ||
           content.includes("winsur.json") ||
-          content.includes("18900");
+          content.includes("18900") ||
+          content.includes("Winsur");
       } catch {
         /* ignore */
       }

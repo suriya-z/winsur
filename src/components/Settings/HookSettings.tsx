@@ -10,23 +10,29 @@ interface HostStatus {
   installed: boolean;
   detected: boolean;
   path: string | null;
+  name?: string;
+  typeId?: string;
 }
 
 interface AllHookStatus {
-  [key: string]: HostStatus | string | null | undefined;
+  [key: string]: HostStatus | string | number | null | undefined;
 }
 
-const HOST_CONFIG: { key: string; label: string; color: string }[] = [
-  { key: "grok_build", label: "Grok Build", color: "#e4e4e7" },
-  { key: "claude_code", label: "Claude Code", color: "#d4a574" },
-  { key: "codex_cli", label: "Codex", color: "#c4b5fd" },
-  { key: "claude_desktop", label: "Claude Desktop", color: "#a8a29e" },
-  { key: "antigravity", label: "Antigravity", color: "#a78bfa" },
-  { key: "opencode", label: "OpenCode", color: "#86efac" },
-  { key: "qwen_code", label: "Qwen Code", color: "#7dd3fc" },
-  { key: "codebuddy", label: "CodeBuddy", color: "#fcd34d" },
-  { key: "windsurf", label: "Windsurf", color: "#fca5a5" },
-];
+const HOST_COLORS: Record<string, string> = {
+  grok_build: "#e4e4e7",
+  claude_code: "#d4a574",
+  codex: "#c4b5fd",
+  claude_desktop: "#a8a29e",
+  cursor: "#94a3b8",
+  antigravity: "#a78bfa",
+  opencode: "#86efac",
+  qwen: "#7dd3fc",
+  gemini: "#60a5fa",
+  copilot: "#94a3b8",
+  hermes: "#2dd4bf",
+  codebuddy: "#fcd34d",
+  windsurf: "#fca5a5",
+};
 
 export function HookSettings() {
   const [status, setStatus] = useState<AllHookStatus>({});
@@ -67,9 +73,11 @@ export function HookSettings() {
   };
 
   // 统计
-  const hosts = HOST_CONFIG.map(({ key }) => status[key] as HostStatus | undefined);
-  const detected = hosts.filter((h) => h?.detected).length;
-  const installed = hosts.filter((h) => h?.installed).length;
+  const hostEntries = Object.entries(status).filter(
+    ([k, v]) => k !== "hook_script" && k !== "agent_count" && v && typeof v === "object"
+  ) as [string, HostStatus][];
+  const detected = hostEntries.filter(([, h]) => h?.detected).length;
+  const installed = hostEntries.filter(([, h]) => h?.installed).length;
 
   return (
     <div style={{ padding: "6px 12px" }}>
@@ -99,7 +107,7 @@ export function HookSettings() {
             {installed > 0 ? `${installed} connected` : detected > 0 ? `${detected} detected` : "No agents"}
           </span>
           <span style={{ opacity: 0.4 }}>/</span>
-          <span>{HOST_CONFIG.length} hosts</span>
+          <span>{hostEntries.length} hosts</span>
           <ChevronDown
             size={10}
             style={{
@@ -176,8 +184,9 @@ export function HookSettings() {
               gap: "3px 6px",
               paddingTop: 6,
             }}>
-              {HOST_CONFIG.map(({ key, label, color: hostColor }) => {
-                const h = status[key] as HostStatus | undefined;
+              {hostEntries.map(([key, h]) => {
+                const label = h?.name || key;
+                const hostColor = HOST_COLORS[key] || "#94a3b8";
                 const detected = h?.detected ?? false;
                 const installed = h?.installed ?? false;
                 // 检测到的用宿主自身颜色，未检测到的灰色
