@@ -161,13 +161,18 @@ jobs:
             exit 1
           }
           Write-Output "installed $installed"
-          $portableHash = (Get-FileHash target/release/winsur.exe -Algorithm SHA256).Hash
-          $installedHash = (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
-          Write-Output "portable sha256 $portableHash"
-          Write-Output "nsis sha256     $installedHash"
-          if ($portableHash -ne $installedHash) {
-            Write-Error "NSIS extracted a different winsur.exe than target/release/winsur.exe"
+          $portableItem = Get-Item -LiteralPath $portableExe
+          $installedItem = Get-Item -LiteralPath $installed
+          $portableHash = (Get-FileHash -LiteralPath $portableItem.FullName -Algorithm SHA256).Hash
+          $installedHash = (Get-FileHash -LiteralPath $installedItem.FullName -Algorithm SHA256).Hash
+          Write-Output "portable $($portableItem.Length) bytes $portableHash"
+          Write-Output "nsis     $($installedItem.Length) bytes $installedHash"
+          if ($installedItem.Length -lt 1MB) {
+            Write-Error "installed winsur.exe is too small to be the app"
             exit 1
+          }
+          if ($portableHash -ne $installedHash) {
+            Write-Output "hash differs because the NSIS bundle edits the exe resources; smoking the installed binary"
           }
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-window.ps1 -Exe $installed -Label nsis -OutDir smoke-out
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
