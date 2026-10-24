@@ -29,7 +29,7 @@
         "alwaysOnTop": true,
         "resizable": false,
         "skipTaskbar": false,
-        "visible": false,
+        "visible": true,
         "focus": false,
         "dragDropEnabled": false,
         "backgroundColor": "#00000000",

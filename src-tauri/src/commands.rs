@@ -53,17 +53,8 @@ async fn release_island(app: &AppHandle, state: &AppState) {
     sleep_ms(220).await;
 }
 
-async fn restore_island(app: &AppHandle, state: &AppState, focus: bool) {
-    if let Some(window) = window(app) {
-        let _ = window.set_always_on_top(true);
-        if focus {
-            let _ = window.show();
-            let _ = window.set_focus();
-        } else {
-            win32::show_inactive(&window);
-        }
-        state.overlay.sync_pointer(&window, true);
-    }
+async fn restore_island(app: &AppHandle, _state: &AppState, focus: bool) {
+    crate::reveal_island(app, focus);
 }
 
 fn session_fields(state: &AppState, session_id: &str) -> Option<(String, String, String, String)> {
@@ -410,9 +401,14 @@ pub fn report_island_metrics(
     radius: f64,
 ) {
     if let Some(window) = window(&app) {
-        state
+        let first = state
             .overlay
             .note_metrics(&window, x, y, width, height, radius);
+        if first {
+            crate::logfile::write(&format!(
+                "island painted x={x} y={y} w={width} h={height} r={radius}"
+            ));
+        }
     }
 }
 

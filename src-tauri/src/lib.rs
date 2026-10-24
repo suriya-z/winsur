@@ -21,8 +21,11 @@ use winsur_core::ssh::SshManager;
 use crate::commands::notify;
 
 mod commands;
+mod logfile;
 mod overlay;
 mod win32;
+
+pub use logfile::init as init_logging;
 
 pub struct AppState {
     pub sessions: Arc<SessionManager>,
@@ -35,20 +38,78 @@ pub struct AppState {
 static QUITTING: AtomicBool = AtomicBool::new(false);
 
 fn request_quit(app: &AppHandle) {
+    request_exit(app, 0);
+}
+
+fn request_exit(app: &AppHandle, code: i32) {
     QUITTING.store(true, Ordering::SeqCst);
-    app.exit(0);
+    app.exit(code);
+}
+
+/// Show the island on the work area. `focus` is for the tray and a second launch.
+/// Startup passes false so the notch does not take the foreground from the terminal.
+pub(crate) fn reveal_island(app: &AppHandle, focus: bool) {
+    let Some(window) = app.get_webview_window("main") else {
+        logfile::write("reveal: main window missing");
+        return;
+    };
+    if let Some(state) = app.try_state::<AppState>() {
+        state.overlay.place(&window);
+    }
+    let prev = win32::foreground_hwnd();
+    let ours = win32::hwnd_of(&window);
+    let _ = window.unminimize();
+    let _ = window.set_always_on_top(true);
+    if focus {
+        let _ = window.show();
+        let _ = window.set_focus();
+    } else {
+        win32::show_inactive(&window);
+    }
+    // The WebView2 controller does not composite if it was created while the
+    // parent HWND was hidden. Toggling it after the parent is shown paints the island.
+    if let Some(webview) = app.get_webview("main") {
+        let _ = webview.hide();
+        let _ = webview.show();
+    } else {
+        logfile::write("reveal: webview missing");
+    }
+    if let Some(state) = app.try_state::<AppState>() {
+        state.overlay.sync_pointer(&window, true);
+    }
+    log_window_state(&window, if focus { "reveal-focus" } else { "reveal" });
+    if !focus {
+        if let Some(ours) = ours {
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(500));
+                win32::restore_foreground_if_ours(prev, ours);
+            });
+        }
+    }
+}
+
+fn log_window_state(window: &tauri::WebviewWindow, reason: &str) {
+    logfile::write(&format!(
+        "{reason} visible={:?} scale={:?} outer_pos={:?} outer_size={:?} on_screen={}",
+        window.is_visible(),
+        window.scale_factor(),
+        window.outer_position(),
+        window.outer_size(),
+        win32::center_on_virtual_screen(window)
+    ));
 }
 
 fn toggle_window(app: &AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
+        logfile::write("tray toggle: main window missing");
         return;
     };
-    if window.is_visible().unwrap_or(false) {
+    if win32::is_shown_on_screen(&window) {
+        logfile::write("tray toggle -> hide");
         let _ = window.hide();
     } else {
-        let _ = window.show();
-        let _ = window.set_focus();
-        let _ = window.set_always_on_top(true);
+        logfile::write("tray toggle -> show");
+        reveal_island(app, true);
     }
 }
 
@@ -96,7 +157,7 @@ fn emit_update(app: &AppHandle, sessions: &SessionManager, session: &Value) {
 
 fn sync_running(sessions: &SessionManager, app: &AppHandle) {
     let Some(processes) = win32::list_processes() else {
-        eprintln!("[Winsur] Agent discovery failed: process list unreadable");
+        logfile::write("agent discovery failed: process list unreadable");
         return;
     };
     let home = std::env::var_os("USERPROFILE")
@@ -158,13 +219,8 @@ fn cleanup(app: &AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            eprintln!("Another launch was redirected to the running Winsur instance.");
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_always_on_top(true);
-                let _ = window.set_focus();
-            }
+            logfile::write("another launch was redirected to the running instance");
+            reveal_island(app, true);
         }))
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
@@ -237,21 +293,15 @@ pub fn run() {
                 match HookServer::start(sessions, on_update, on_notify) {
                     Ok(server) => Some(server),
                     Err(err) => {
-                        eprintln!("Hook server failed to start (port 18900 busy?): {err}");
+                        logfile::write(&format!(
+                            "hook server failed to start (port 18900 busy?): {err}"
+                        ));
                         None
                     }
                 }
             };
 
             sessions.clear_all();
-            match resolve_hook_script(app.path().resource_dir().ok().as_deref()) {
-                Some(script) => {
-                    let message = auto_install_on_launch(&script);
-                    eprintln!("[Winsur] {message}");
-                }
-                None => eprintln!("[Winsur] winsur-hook.ps1 was not found; hook install skipped"),
-            }
-
             app.manage(AppState {
                 sessions: sessions.clone(),
                 ssh,
@@ -260,24 +310,80 @@ pub fn run() {
                 discovery_stop: discovery_stop.clone(),
             });
 
+            // Show before hook install. A hidden parent leaves the WebView2
+            // controller invisible, which is a taskbar button and no notch.
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_always_on_top(true);
-                overlay.attach(&window);
-                win32::strip_thick_frame(&window);
-                win32::show_inactive(&window);
-                overlay.sync_pointer(&window, true);
-                let fallback = window.clone();
+                if let Ok(Some(monitor)) = window.primary_monitor() {
+                    let area = monitor.work_area();
+                    logfile::write(&format!(
+                        "primary scale={} work={},{} {}x{}",
+                        monitor.scale_factor(),
+                        area.position.x,
+                        area.position.y,
+                        area.size.width,
+                        area.size.height
+                    ));
+                } else {
+                    logfile::write("primary monitor unavailable");
+                }
+                reveal_island(app.handle(), false);
+                overlay.arm(&window);
+                let fallback_app = handle.clone();
+                let fallback_overlay = overlay.clone();
                 thread::spawn(move || {
-                    thread::sleep(Duration::from_secs(2));
-                    if fallback.is_visible().ok() == Some(false) {
-                        eprintln!("[Winsur] Fallback timeout -> showing window");
-                        win32::show_inactive(&fallback);
+                    thread::sleep(Duration::from_secs(3));
+                    if fallback_overlay.has_painted() {
+                        return;
                     }
+                    logfile::write("island not painted after 3s; showing the webview again");
+                    reveal_island(&fallback_app, false);
+                });
+            } else {
+                logfile::write("main window missing at startup");
+            }
+
+            if logfile::smoke_requested() {
+                let smoke_app = handle.clone();
+                thread::spawn(move || {
+                    // Stay running so the CI script can screenshot the live window.
+                    // It kills the process after reading this line.
+                    for _ in 0..20 {
+                        thread::sleep(Duration::from_secs(1));
+                        let shown = smoke_app
+                            .get_webview_window("main")
+                            .map(|window| win32::is_shown_on_screen(&window))
+                            .unwrap_or(false);
+                        let painted = smoke_app
+                            .try_state::<AppState>()
+                            .map(|state| state.overlay.has_painted())
+                            .unwrap_or(false);
+                        if shown && painted {
+                            if let Some(window) = smoke_app.get_webview_window("main") {
+                                log_window_state(&window, "smoke");
+                            }
+                            logfile::write("smoke=ok");
+                            return;
+                        }
+                    }
+                    if let Some(window) = smoke_app.get_webview_window("main") {
+                        log_window_state(&window, "smoke");
+                    }
+                    logfile::write("smoke=fail");
                 });
             }
 
             if let Err(err) = create_tray(app.handle()) {
-                eprintln!("[Winsur] Tray creation warning: {err}");
+                logfile::write(&format!("tray creation failed: {err}"));
+            } else {
+                logfile::write("tray ready");
+            }
+
+            match resolve_hook_script(app.path().resource_dir().ok().as_deref()) {
+                Some(script) => {
+                    let message = auto_install_on_launch(&script);
+                    logfile::write(&message);
+                }
+                None => logfile::write("winsur-hook.ps1 was not found; hook install skipped"),
             }
 
             let sessions_d = sessions.clone();

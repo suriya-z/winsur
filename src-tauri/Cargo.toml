@@ -11,6 +11,13 @@ publish = false
 name = "winsur_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# `tauri build` turns this on and `tauri dev` turns it off. Without it, a
+# release binary still navigates to the Vite dev URL and the transparent
+# window paints nothing.
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2.7.4", features = [] }
 

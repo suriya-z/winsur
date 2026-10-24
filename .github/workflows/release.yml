@@ -34,6 +34,9 @@ jobs:
       - name: Typecheck
         run: npx tsc -b
 
+      - name: Frontend bundle
+        run: npx vite build
+
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 

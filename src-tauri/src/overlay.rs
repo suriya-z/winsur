@@ -40,6 +40,8 @@ struct Inner {
 pub struct Overlay {
     inner: Mutex<Inner>,
     poll_stop: AtomicBool,
+    armed: AtomicBool,
+    painted: AtomicBool,
 }
 
 impl Default for Overlay {
@@ -63,13 +65,32 @@ impl Overlay {
                 drag_gen: 0,
             }),
             poll_stop: AtomicBool::new(false),
+            armed: AtomicBool::new(false),
+            painted: AtomicBool::new(false),
         }
     }
 
-    pub fn attach(self: &std::sync::Arc<Self>, window: &WebviewWindow) {
+    /// Move the island onto the primary work area. Click-through stays off until
+    /// [`Self::arm`] so the first paint is not a layered window that was never shown.
+    pub fn place(&self, window: &WebviewWindow) {
         self.apply_bounds(window);
+        if !win32::center_on_virtual_screen(window) {
+            self.inner.lock().expect("overlay").anchor = Some((800.0, 8.0));
+            self.apply_bounds(window);
+        }
+    }
+
+    pub fn has_painted(&self) -> bool {
+        self.painted.load(Ordering::SeqCst)
+    }
+
+    /// Start cursor polling. Safe to call once; later calls only reapply hit testing.
+    pub fn arm(self: &std::sync::Arc<Self>, window: &WebviewWindow) {
         self.apply_ignore(window, true, true);
         win32::strip_thick_frame(window);
+        if self.armed.swap(true, Ordering::SeqCst) {
+            return;
+        }
         let this = std::sync::Arc::clone(self);
         let window = window.clone();
         thread::spawn(move || {
@@ -87,6 +108,7 @@ impl Overlay {
         inner.drag_gen = inner.drag_gen.wrapping_add(1);
     }
 
+    /// Returns true the first time the renderer reports a real island box.
     pub fn note_metrics(
         &self,
         window: &WebviewWindow,
@@ -95,10 +117,11 @@ impl Overlay {
         width: f64,
         height: f64,
         radius: f64,
-    ) {
+    ) -> bool {
         if !width.is_finite() || !height.is_finite() || width < 8.0 || height < 8.0 {
-            return;
+            return false;
         }
+        let first = !self.painted.swap(true, Ordering::SeqCst);
         let next_r = if radius.is_finite() {
             radius.round().max(0.0)
         } else {
@@ -124,7 +147,7 @@ impl Overlay {
         };
         if !changed {
             self.sync_pointer(window, false);
-            return;
+            return first;
         }
         let dragging = self.inner.lock().expect("overlay").dragging;
         self.apply_bounds(window);
@@ -136,6 +159,7 @@ impl Overlay {
             }
         }
         self.sync_pointer(window, false);
+        first
     }
 
     pub fn begin_drag(self: &std::sync::Arc<Self>, window: WebviewWindow) {
@@ -272,8 +296,10 @@ impl Overlay {
             f64::from(bounds.height),
         ));
         win32::strip_thick_frame(window);
-        let ignoring = self.inner.lock().expect("overlay").ignoring;
-        self.apply_ignore(window, ignoring, true);
+        if self.armed.load(Ordering::SeqCst) {
+            let ignoring = self.inner.lock().expect("overlay").ignoring;
+            self.apply_ignore(window, ignoring, true);
+        }
     }
 
     fn apply_ignore(&self, window: &WebviewWindow, ignore: bool, force: bool) {
@@ -354,7 +380,19 @@ fn primary_anchor(window: &WebviewWindow) -> Option<(f64, f64)> {
     let monitor = window.primary_monitor().ok().flatten()?;
     let scale = monitor.scale_factor().max(0.01);
     let area = monitor.work_area();
-    let x = area.position.x as f64 / scale + area.size.width as f64 / scale / 2.0;
-    let y = area.position.y as f64 / scale + 8.0;
+    let origin_x = area.position.x as f64 / scale;
+    let origin_y = area.position.y as f64 / scale;
+    let width = area.size.width as f64 / scale;
+    let height = area.size.height as f64 / scale;
+    if width < 64.0 || height < 64.0 {
+        return None;
+    }
+    let mut x = origin_x + width / 2.0;
+    let min_x = origin_x + 120.0;
+    let max_x = origin_x + width - 120.0;
+    if max_x > min_x {
+        x = x.clamp(min_x, max_x);
+    }
+    let y = origin_y + 8.0;
     Some((x.round(), y.round()))
 }

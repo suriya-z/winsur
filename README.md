@@ -102,6 +102,7 @@ the bootstrapper when it is missing. The shell is not code-signed.
 |------|------|
 | `hooks\` | Hook scripts (source of truth) |
 | `~/.winsur\` | Settings, SSH remotes |
+| `%APPDATA%\Winsur\winsur.log` | Startup log (release builds have no console) |
 | `~/.grok\hooks\winsur.json` | Generated Grok hooks |
 
 ## Contributing

@@ -10,13 +10,14 @@ Nothing in this file may be left unchecked. CI fails if a line still starts with
 - [x] A second launch does not bind a second hook server. It exits on its own and asks the running instance to show, restore, raise, and focus the island (`src-tauri/src/lib.rs`).
 - [x] Closing the island hides it and leaves the process (and the tray) running. Quit happens only from the tray Quit item (`src-tauri/src/lib.rs`).
 - [x] Windows AppUserModelID is `com.winsur.app` so notifications and the taskbar identity match the old `setAppUserModelId` (`src-tauri/src/win32.rs`).
-- [x] Startup order matches Electron: bind the hook server (UI still comes up if port 18900 is busy), clear in-memory sessions, auto-install hooks, create the overlay and tray, then discover already-running agents and repeat every 20s (`src-tauri/src/lib.rs`).
+- [x] Startup order: bind the hook server (UI still comes up if port 18900 is busy), clear in-memory sessions, show the island, create the tray, auto-install hooks, then discover already-running agents and repeat every 20s. Hook install does not gate the first show (`src-tauri/src/lib.rs`).
 - [x] On exit, discovery stops, SSH tunnels are killed, and the hook server closes (`src-tauri/src/lib.rs`).
-- [x] Tray icon, tooltip "Winsur", Show/Hide, and Quit (`src-tauri/src/lib.rs`). Packaged builds have no console window (`windows_subsystem`).
+- [x] Tray icon, tooltip "Winsur", Show/Hide, and Quit. A left click or Show/Hide brings the island back on screen and focuses it when it was hidden or off the work area (`src-tauri/src/lib.rs`). Packaged builds have no console window (`windows_subsystem`).
+- [x] Release builds append startup, panics, and window geometry to `%APPDATA%\Winsur\winsur.log` (`src-tauri/src/logfile.rs`).
 
 ## Overlay and click-through
 
-- [x] Frameless transparent always-on-top window, no shadow, not resizable, file drop disabled, shown without stealing focus (`src-tauri/tauri.conf.json`, `src-tauri/src/overlay.rs`, `src-tauri/src/win32.rs`).
+- [x] Frameless transparent always-on-top window, no shadow, not resizable, file drop disabled, shown without stealing focus. The window is created visible so WebView2 composites; a later hide/show toggles the controller or the surface stays blank (`src-tauri/tauri.conf.json`, `src-tauri/src/lib.rs`, `src-tauri/src/win32.rs`).
 - [x] `WS_THICKFRAME` is cleared so the invisible resize border is not a dead zone (`src-tauri/src/win32.rs`).
 - [x] Window is sized to the visible island plus a 56px shadow gutter. Default island is 240×38, radius 19. Anchor is the primary work-area top center, 8px down (`crates/winsur-core/src/hit_region.rs`, `src-tauri/src/overlay.rs`).
 - [x] Hit testing uses the rounded rect, not the bounding box. Shadow gutter and corner pixels pass through (`crates/winsur-core/src/hit_region.rs`).

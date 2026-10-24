@@ -31,10 +31,13 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
 use windows::Win32::UI::WindowsAndMessaging::{
     AllowSetForegroundWindow, BringWindowToTop, EnumWindows, GetClassNameW, GetForegroundWindow,
-    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
-    IsWindow, IsWindowVisible, PostMessageW, SetForegroundWindow, SetWindowLongPtrW, ShowWindow,
-    GWL_STYLE, SC_RESTORE, SW_RESTORE, SW_SHOW, SW_SHOWNOACTIVATE, WM_SYSCOMMAND, WNDENUMPROC,
-    WS_THICKFRAME,
+    GetSystemMetrics, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW,
+    GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, PostMessageW, RedrawWindow,
+    SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_STYLE, HWND_TOPMOST,
+    RDW_ALLCHILDREN, RDW_FRAME, RDW_INVALIDATE, RDW_UPDATENOW, SC_RESTORE, SM_CXVIRTUALSCREEN,
+    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOW, SW_SHOWNOACTIVATE, WM_SYSCOMMAND,
+    WNDENUMPROC, WS_THICKFRAME,
 };
 use winsur_core::discover::ProcessInfo;
 use winsur_core::focus::{
@@ -103,12 +106,89 @@ pub fn strip_thick_frame(window: &WebviewWindow) {
 }
 
 pub fn show_inactive(window: &WebviewWindow) {
-    if let Some(hwnd) = hwnd_of(window) {
-        unsafe {
-            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-        }
-    } else {
+    let Some(hwnd) = hwnd_of(window) else {
         let _ = window.show();
+        return;
+    };
+    // SW_SHOW would activate the island and steal the terminal. The WebView2
+    // controller still has to be flipped visible by the caller after this,
+    // because a controller created while the parent was hidden does not paint
+    // when only the parent HWND is shown.
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        let _ = SetWindowPos(
+            hwnd,
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED,
+        );
+        let _ = RedrawWindow(
+            Some(hwnd),
+            None,
+            None,
+            RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN | RDW_FRAME,
+        );
+    }
+}
+
+pub fn foreground_hwnd() -> HWND {
+    unsafe { GetForegroundWindow() }
+}
+
+/// If WebView2's show activated us, give the foreground back to whoever had it.
+pub fn restore_foreground_if_ours(prev: HWND, ours: HWND) {
+    unsafe {
+        if prev.0.is_null() || ours.0.is_null() || !IsWindow(Some(prev)).as_bool() {
+            return;
+        }
+        let fg = GetForegroundWindow();
+        if fg.0.is_null() {
+            return;
+        }
+        let mut fg_pid = 0u32;
+        let mut our_pid = 0u32;
+        GetWindowThreadProcessId(fg, Some(&mut fg_pid));
+        GetWindowThreadProcessId(ours, Some(&mut our_pid));
+        if fg_pid != 0 && fg_pid == our_pid {
+            let _ = SetForegroundWindow(prev);
+        }
+    }
+}
+
+pub fn center_on_virtual_screen(window: &WebviewWindow) -> bool {
+    let Ok(pos) = window.outer_position() else {
+        return false;
+    };
+    let Ok(size) = window.outer_size() else {
+        return false;
+    };
+    if size.width < 32 || size.height < 32 {
+        return false;
+    }
+    let (vx, vy, vw, vh) = virtual_screen();
+    if vw <= 0 || vh <= 0 {
+        return true;
+    }
+    let cx = pos.x + (size.width as i32) / 2;
+    let cy = pos.y + (size.height as i32) / 2;
+    cx >= vx && cx < vx + vw && cy >= vy && cy < vy + vh
+}
+
+pub fn is_shown_on_screen(window: &WebviewWindow) -> bool {
+    window.is_visible().unwrap_or(false) && center_on_virtual_screen(window)
+}
+
+fn virtual_screen() -> (i32, i32, i32, i32) {
+    unsafe {
+        (
+            GetSystemMetrics(SM_XVIRTUALSCREEN),
+            GetSystemMetrics(SM_YVIRTUALSCREEN),
+            GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            GetSystemMetrics(SM_CYVIRTUALSCREEN),
+        )
     }
 }
 

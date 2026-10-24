@@ -28,6 +28,9 @@ jobs:
       - name: Typecheck
         run: npx tsc -b
 
+      - name: Frontend bundle
+        run: npx vite build
+
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
@@ -75,3 +78,59 @@ jobs:
             target/release/bundle/msi/*.msi
             target/release/winsur.exe
           if-no-files-found: error
+
+      - name: Smoke test portable exe
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-window.ps1 -Exe target/release/winsur.exe -Label portable -OutDir smoke-out
+
+      - name: Smoke test NSIS install
+        shell: powershell
+        run: |
+          $setup = Get-ChildItem target/release/bundle/nsis/*.exe | Select-Object -First 1
+          if (-not $setup) { Write-Error "NSIS setup missing"; exit 1 }
+          $dest = Join-Path $env:TEMP "winsur-nsis-smoke"
+          if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
+          Write-Output "installing $($setup.FullName) to $dest"
+          $psi = New-Object System.Diagnostics.ProcessStartInfo
+          $psi.FileName = $setup.FullName
+          $psi.Arguments = "/S /CURRENTUSER /D=$dest"
+          $psi.UseShellExecute = $true
+          $installer = [System.Diagnostics.Process]::Start($psi)
+          if (-not $installer.WaitForExit(180000)) {
+            Stop-Process -Id $installer.Id -Force -ErrorAction SilentlyContinue
+            Write-Error "NSIS installer timed out"
+            exit 1
+          }
+          if ($installer.ExitCode -ne 0) {
+            Write-Error "NSIS installer exit code $($installer.ExitCode)"
+            exit 1
+          }
+          $installed = Join-Path $dest "winsur.exe"
+          if (-not (Test-Path -LiteralPath $installed)) {
+            Get-ChildItem $dest -Recurse -Filter *.exe | ForEach-Object { Write-Output $_.FullName }
+            Write-Error "installed winsur.exe not found"
+            exit 1
+          }
+          $portableHash = (Get-FileHash target/release/winsur.exe -Algorithm SHA256).Hash
+          $installedHash = (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
+          Write-Output "portable sha256 $portableHash"
+          Write-Output "nsis sha256     $installedHash"
+          if ($portableHash -ne $installedHash) {
+            Write-Error "NSIS extracted a different winsur.exe than target/release/winsur.exe"
+            exit 1
+          }
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-window.ps1 -Exe $installed -Label nsis -OutDir smoke-out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $uninstaller = Join-Path $dest "uninstall.exe"
+          if (Test-Path -LiteralPath $uninstaller) {
+            $uninstall = Start-Process -FilePath $uninstaller -ArgumentList "/S" -PassThru
+            $null = $uninstall.WaitForExit(120000)
+          }
+
+      - name: Upload smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: winsur-smoke
+          path: smoke-out/**
+          if-no-files-found: warn
