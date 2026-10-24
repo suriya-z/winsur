@@ -113,6 +113,23 @@ for ($i = 1; $i -le $WaitSec; $i++) {
     if ($chosen -and $logPartial -match "smoke=ok") { break }
 }
 
+$logText = ""
+if (Test-Path -LiteralPath $log) { $logText = Get-Content -LiteralPath $log -Raw }
+$islandHits = [regex]::Matches($logText, 'island screen x=([-0-9.]+) y=([-0-9.]+) w=([-0-9.]+) h=([-0-9.]+) visible=([-0-9.]+)x([-0-9.]+)')
+$island = $null
+if ($islandHits.Count -gt 0) {
+    $m = $islandHits[$islandHits.Count - 1]
+    $island = [pscustomobject]@{
+        X    = [double]$m.Groups[1].Value
+        Y    = [double]$m.Groups[2].Value
+        W    = [double]$m.Groups[3].Value
+        H    = [double]$m.Groups[4].Value
+        VisW = [double]$m.Groups[5].Value
+        VisH = [double]$m.Groups[6].Value
+    }
+    Write-Output ("island screen x={0} y={1} {2}x{3} visible={4}x{5}" -f $island.X, $island.Y, $island.W, $island.H, $island.VisW, $island.VisH)
+}
+
 $png = Join-Path $OutDir "$Label.png"
 $shotNote = "screenshot-skipped"
 try {
@@ -132,11 +149,16 @@ try {
 
 $dark = 0
 $sampled = 0
-if ($chosen -and $bmp) {
-    $cx = [int](($chosen.Left + $chosen.Right) / 2)
-    $cy = [int](($chosen.Top + $chosen.Bottom) / 2)
-    for ($y = $cy - 8; $y -le $cy + 8; $y++) {
-        for ($x = $cx - 30; $x -le $cx + 30; $x++) {
+if ($island -and $bmp -and $island.W -gt 8 -and $island.H -gt 8) {
+    # Sample the pill interior. The window is mostly a transparent gutter, and
+    # the caption sits in the middle, so a small center patch can be glyph ink
+    # or wallpaper from the wrong place.
+    $x0 = [int][Math]::Ceiling($island.X + 3)
+    $y0 = [int][Math]::Ceiling($island.Y + 3)
+    $x1 = [int][Math]::Floor($island.X + $island.W - 4)
+    $y1 = [int][Math]::Floor($island.Y + $island.H - 4)
+    for ($y = $y0; $y -le $y1; $y += 2) {
+        for ($x = $x0; $x -le $x1; $x += 2) {
             $px = $x - $bounds.X
             $py = $y - $bounds.Y
             if ($px -lt 0 -or $py -lt 0 -or $px -ge $bmp.Width -or $py -ge $bmp.Height) { continue }
@@ -145,7 +167,7 @@ if ($chosen -and $bmp) {
             if ($color.R -lt 48 -and $color.G -lt 48 -and $color.B -lt 48) { $dark++ }
         }
     }
-    Write-Output "island sample dark=$dark / $sampled at $cx,$cy"
+    Write-Output "island sample dark=$dark / $sampled inside $x0,$y0-$x1,$y1"
 }
 if ($bmp) { $bmp.Dispose() }
 
@@ -155,7 +177,6 @@ if (-not $proc.HasExited) {
 }
 Stop-Winsur
 
-$logText = ""
 if (Test-Path -LiteralPath $log) {
     $logText = Get-Content -LiteralPath $log -Raw
     $logCopy = Join-Path $OutDir "$Label.log"
@@ -168,6 +189,10 @@ if (Test-Path -LiteralPath $log) {
 
 $fail = @()
 if (-not $chosen) { $fail += "no visible non-zero on-screen top-level window" }
+if (-not $island) { $fail += "log missing island screen rect" }
+elseif ($island.VisW -lt 40 -or $island.VisH -lt 16) {
+    $fail += "island is off the screen (visible $($island.VisW)x$($island.VisH) at $($island.X),$($island.Y))"
+}
 if ($sampled -lt 20 -or $dark -lt ($sampled * 0.4)) { $fail += "island pixels not painted (dark $dark / $sampled)" }
 if ($logText -notmatch "frontend=embedded") { $fail += "log missing frontend=embedded" }
 if ($logText -notmatch "tray ready") { $fail += "log missing tray ready" }

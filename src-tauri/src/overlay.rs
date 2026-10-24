@@ -84,6 +84,12 @@ impl Overlay {
         self.painted.load(Ordering::SeqCst)
     }
 
+    /// Latest island box in CSS pixels, relative to the webview viewport.
+    pub fn measured_box(&self) -> Option<(f64, f64, f64, f64)> {
+        let inner = self.inner.lock().expect("overlay");
+        inner.measured.map(|m| (m.x, m.y, m.w, m.h))
+    }
+
     /// Start cursor polling. Safe to call once; later calls only reapply hit testing.
     pub fn arm(self: &std::sync::Arc<Self>, window: &WebviewWindow) {
         self.apply_ignore(window, true, true);

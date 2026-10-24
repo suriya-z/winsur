@@ -62,8 +62,15 @@
   --font-mono: "Cascadia Code", "JetBrains Mono", "Consolas", monospace;
 }
 
+/* The overlay window is the island plus a 56px shadow gutter, and the pill is
+   centered in that window. A content-sized body collapses #root's height: 100%,
+   the pill sits at y=0, and the gutter placement (window top = anchor - 56)
+   pushes the whole island above the screen. Fixed inset pins the body to the
+   viewport even when the percentage height chain would otherwise fail. */
 html, body {
   background: transparent !important;
+  width: 100%;
+  height: 100%;
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -72,6 +79,11 @@ html, body {
   user-select: none;
   -webkit-user-select: none;
   -webkit-font-smoothing: antialiased;
+}
+
+body {
+  position: fixed;
+  inset: 0;
 }
 
 #root {

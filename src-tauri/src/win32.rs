@@ -181,6 +181,17 @@ pub fn is_shown_on_screen(window: &WebviewWindow) -> bool {
     window.is_visible().unwrap_or(false) && center_on_virtual_screen(window)
 }
 
+/// Width and height of `rect` that lie on the virtual screen.
+pub fn visible_span(left: f64, top: f64, right: f64, bottom: f64) -> (f64, f64) {
+    let (vx, vy, vw, vh) = virtual_screen();
+    if vw <= 0 || vh <= 0 {
+        return ((right - left).max(0.0), (bottom - top).max(0.0));
+    }
+    let vis_w = right.min(f64::from(vx + vw)) - left.max(f64::from(vx));
+    let vis_h = bottom.min(f64::from(vy + vh)) - top.max(f64::from(vy));
+    (vis_w.max(0.0), vis_h.max(0.0))
+}
+
 fn virtual_screen() -> (i32, i32, i32, i32) {
     unsafe {
         (

@@ -88,6 +88,33 @@ pub(crate) fn reveal_island(app: &AppHandle, focus: bool) {
     }
 }
 
+/// The window is taller than the pill. `smoke=ok` requires the pill itself,
+/// not the transparent gutter, to intersect the virtual screen.
+fn island_on_screen(app: &AppHandle) -> bool {
+    let Some(window) = app.get_webview_window("main") else {
+        return false;
+    };
+    let Some(state) = app.try_state::<AppState>() else {
+        return false;
+    };
+    let Some((x, y, w, h)) = state.overlay.measured_box() else {
+        return false;
+    };
+    let Ok(inner) = window.inner_position() else {
+        return false;
+    };
+    let scale = window.scale_factor().unwrap_or(1.0).max(0.01);
+    let left = inner.x as f64 + x * scale;
+    let top = inner.y as f64 + y * scale;
+    let width = w * scale;
+    let height = h * scale;
+    let (vis_w, vis_h) = win32::visible_span(left, top, left + width, top + height);
+    logfile::write(&format!(
+        "island screen x={left:.1} y={top:.1} w={width:.1} h={height:.1} visible={vis_w:.0}x{vis_h:.0}"
+    ));
+    vis_w >= 40.0 && vis_h >= 16.0
+}
+
 fn log_window_state(window: &tauri::WebviewWindow, reason: &str) {
     logfile::write(&format!(
         "{reason} visible={:?} scale={:?} outer_pos={:?} outer_size={:?} on_screen={}",
@@ -357,7 +384,8 @@ pub fn run() {
                             .try_state::<AppState>()
                             .map(|state| state.overlay.has_painted())
                             .unwrap_or(false);
-                        if shown && painted {
+                        let island = island_on_screen(&smoke_app);
+                        if shown && painted && island {
                             if let Some(window) = smoke_app.get_webview_window("main") {
                                 log_window_state(&window, "smoke");
                             }
