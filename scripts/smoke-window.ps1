@@ -29,6 +29,14 @@ public class WinsurSmoke {
     [DllImport("user32.dll")] public static extern int GetClassName(IntPtr hWnd, StringBuilder sb, int count);
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int nIndex);
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+    [DllImport("gdi32.dll")] public static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+    [DllImport("gdi32.dll")] public static extern bool DeleteDC(IntPtr hdc);
+    [DllImport("gdi32.dll")] public static extern IntPtr CreateCompatibleBitmap(IntPtr hdc, int cx, int cy);
+    [DllImport("gdi32.dll")] public static extern IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
+    [DllImport("gdi32.dll")] public static extern bool DeleteObject(IntPtr hObject);
+    [DllImport("gdi32.dll")] public static extern bool BitBlt(IntPtr hdc, int x, int y, int cx, int cy, IntPtr hdcSrc, int x1, int y1, uint rop);
     public struct RECT { public int Left, Top, Right, Bottom; }
 }
 "@
@@ -132,38 +140,70 @@ if ($islandHits.Count -gt 0) {
 
 $png = Join-Path $OutDir "$Label.png"
 $shotNote = "screenshot-skipped"
-function Copy-VirtualScreen([System.Drawing.CopyPixelOperation]$Op) {
+# PowerShell 5.1 rejects SourceCopy -bor CaptureBlt as a CopyPixelOperation
+# (1087111200 is not a named enum member). BitBlt takes the same bits as a DWORD.
+# 0x00CC0020 is SRCCOPY. 0x40000000 is CAPTUREBLT, which includes layered windows.
+function Copy-VirtualScreen([uint32]$Rop) {
     $screen = [System.Windows.Forms.SystemInformation]::VirtualScreen
-    $image = New-Object System.Drawing.Bitmap ([Math]::Max(1, $screen.Width)), ([Math]::Max(1, $screen.Height))
-    $graphics = [System.Drawing.Graphics]::FromImage($image)
-    $graphics.CopyFromScreen($screen.X, $screen.Y, 0, 0, $image.Size, $Op)
-    $graphics.Dispose()
+    $width = [Math]::Max(1, $screen.Width)
+    $height = [Math]::Max(1, $screen.Height)
+    $desktop = [WinsurSmoke]::GetDC([IntPtr]::Zero)
+    if ($desktop -eq [IntPtr]::Zero) { throw "GetDC failed" }
+    $memory = [WinsurSmoke]::CreateCompatibleDC($desktop)
+    $native = [WinsurSmoke]::CreateCompatibleBitmap($desktop, $width, $height)
+    $previous = [WinsurSmoke]::SelectObject($memory, $native)
+    $ok = [WinsurSmoke]::BitBlt($memory, 0, 0, $width, $height, $desktop, $screen.X, $screen.Y, $Rop)
+    [void][WinsurSmoke]::SelectObject($memory, $previous)
+    if (-not $ok) {
+        [void][WinsurSmoke]::DeleteObject($native)
+        [void][WinsurSmoke]::DeleteDC($memory)
+        [void][WinsurSmoke]::ReleaseDC([IntPtr]::Zero, $desktop)
+        throw "BitBlt failed rop=$Rop"
+    }
+    $image = [System.Drawing.Image]::FromHbitmap($native)
+    [void][WinsurSmoke]::DeleteObject($native)
+    [void][WinsurSmoke]::DeleteDC($memory)
+    [void][WinsurSmoke]::ReleaseDC([IntPtr]::Zero, $desktop)
     return $image
+}
+
+function Test-MostlyBlack($Image) {
+    $blackish = 0
+    for ($i = 0; $i -lt 16; $i++) {
+        $sample = $Image.GetPixel([int]($Image.Width * ($i + 0.5) / 16), [int]($Image.Height / 2))
+        if ($sample.R -lt 8 -and $sample.G -lt 8 -and $sample.B -lt 8) { $blackish++ }
+    }
+    return $blackish -ge 14
 }
 
 try {
     $bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
-    # Click-through marks the HWND layered. CaptureBlt includes those pixels.
-    # If that flag comes back black on the VM, fall back to the plain desktop copy.
-    $capture = [System.Drawing.CopyPixelOperation]([int][System.Drawing.CopyPixelOperation]::SourceCopy -bor [int][System.Drawing.CopyPixelOperation]::CaptureBlt)
-    $bmp = Copy-VirtualScreen $capture
-    $blackish = 0
-    for ($i = 0; $i -lt 16; $i++) {
-        $sample = $bmp.GetPixel([int]($bmp.Width * ($i + 0.5) / 16), [int]($bmp.Height / 2))
-        if ($sample.R -lt 8 -and $sample.G -lt 8 -and $sample.B -lt 8) { $blackish++ }
-    }
-    if ($blackish -ge 14) {
-        Write-Output "captureblt looked black; retrying without it"
+    $srcCopy = [uint32]13369376
+    $captureBlt = [uint32]1087111200
+    $bmp = Copy-VirtualScreen $captureBlt
+    if (Test-MostlyBlack $bmp) {
+        Write-Output "captureblt looked black; retrying with SRCCOPY"
         $bmp.Dispose()
-        $bmp = Copy-VirtualScreen ([System.Drawing.CopyPixelOperation]::SourceCopy)
+        $bmp = Copy-VirtualScreen $srcCopy
     }
     $bmp.Save($png, [System.Drawing.Imaging.ImageFormat]::Png)
     $shotNote = "screenshot=$png ${bounds.Width}x${bounds.Height}"
     Write-Output $shotNote
 } catch {
-    Write-Output "screenshot failed: $($_.Exception.Message)"
-    $bmp = $null
-    $bounds = $null
+    Write-Output "bitblt failed: $($_.Exception.Message); retrying SourceCopy"
+    try {
+        $bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
+        $bmp = New-Object System.Drawing.Bitmap ([Math]::Max(1, $bounds.Width)), ([Math]::Max(1, $bounds.Height))
+        $graphics = [System.Drawing.Graphics]::FromImage($bmp)
+        $graphics.CopyFromScreen($bounds.X, $bounds.Y, 0, 0, $bmp.Size)
+        $graphics.Dispose()
+        $bmp.Save($png, [System.Drawing.Imaging.ImageFormat]::Png)
+        Write-Output "screenshot=$png ${bounds.Width}x${bounds.Height} sourcecopy"
+    } catch {
+        Write-Output "screenshot failed: $($_.Exception.Message)"
+        $bmp = $null
+        $bounds = $null
+    }
 }
 
 $dark = 0
