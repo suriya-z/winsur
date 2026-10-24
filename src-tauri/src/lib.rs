@@ -115,6 +115,40 @@ fn island_on_screen(app: &AppHandle) -> bool {
     vis_w >= 40.0 && vis_h >= 16.0
 }
 
+fn probe_webview(window: &tauri::WebviewWindow) {
+    // withGlobalTauri is on, so this runs even if the bundle threw before
+    // main.tsx installed its own logger.
+    let js = r#"
+        (() => {
+          const send = (message) => {
+            try {
+              const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+              if (invoke) invoke('frontend_log', { message: String(message).slice(0, 400) });
+            } catch (_) {}
+          };
+          try {
+            const root = document.getElementById('root');
+            const pill = root && root.firstElementChild;
+            const box = pill && pill.getBoundingClientRect();
+            const text = (document.body && document.body.innerText || '').replace(/\s+/g, ' ').slice(0, 80);
+            send('probe href=' + location.href
+              + ' state=' + document.readyState
+              + ' html=' + document.documentElement.clientWidth + 'x' + document.documentElement.clientHeight
+              + ' body=' + document.body.clientWidth + 'x' + document.body.clientHeight
+              + ' root=' + (root ? root.clientWidth + 'x' + root.clientHeight : 'missing')
+              + ' pill=' + (box ? box.x.toFixed(1) + ',' + box.y.toFixed(1) + ' ' + box.width.toFixed(1) + 'x' + box.height.toFixed(1) : 'missing')
+              + ' text=' + text);
+          } catch (err) {
+            send('probe failed ' + err);
+          }
+        })()
+    "#;
+    match window.eval(js) {
+        Ok(()) => logfile::write("webview eval queued"),
+        Err(err) => logfile::write(&format!("webview eval failed: {err}")),
+    }
+}
+
 fn log_window_state(window: &tauri::WebviewWindow, reason: &str) {
     logfile::write(&format!(
         "{reason} visible={:?} scale={:?} outer_pos={:?} outer_size={:?} on_screen={}",
@@ -275,6 +309,7 @@ pub fn run() {
             commands::stop_dragging,
             commands::report_island_metrics,
             commands::set_ignore_mouse_events,
+            commands::frontend_log,
         ])
         .setup(|app| {
             win32::set_app_user_model_id();
@@ -355,6 +390,20 @@ pub fn run() {
                 }
                 reveal_island(app.handle(), false);
                 overlay.arm(&window);
+                let probe_app = handle.clone();
+                thread::spawn(move || {
+                    // The release subsystem has no console. Ask the page where
+                    // the pill actually is, and record eval failures when the
+                    // document never becomes scriptable.
+                    for delay in [Duration::from_secs(1), Duration::from_secs(2)] {
+                        thread::sleep(delay);
+                        if let Some(window) = probe_app.get_webview_window("main") {
+                            probe_webview(&window);
+                        } else {
+                            logfile::write("webview probe: main window missing");
+                        }
+                    }
+                });
                 let fallback_app = handle.clone();
                 let fallback_overlay = overlay.clone();
                 thread::spawn(move || {

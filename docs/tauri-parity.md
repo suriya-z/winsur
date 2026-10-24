@@ -13,13 +13,13 @@ Nothing in this file may be left unchecked. CI fails if a line still starts with
 - [x] Startup order: bind the hook server (UI still comes up if port 18900 is busy), clear in-memory sessions, show the island, create the tray, auto-install hooks, then discover already-running agents and repeat every 20s. Hook install does not gate the first show (`src-tauri/src/lib.rs`).
 - [x] On exit, discovery stops, SSH tunnels are killed, and the hook server closes (`src-tauri/src/lib.rs`).
 - [x] Tray icon, tooltip "Winsur", Show/Hide, and Quit. A left click or Show/Hide brings the island back on screen and focuses it when it was hidden or off the work area (`src-tauri/src/lib.rs`). Packaged builds have no console window (`windows_subsystem`).
-- [x] Release builds append startup, panics, and window geometry to `%APPDATA%\Winsur\winsur.log` (`src-tauri/src/logfile.rs`).
+- [x] Release builds append startup, panics, window geometry, page `ready` layout, and `window.onerror` / unhandled rejections to `%APPDATA%\Winsur\winsur.log` (`src-tauri/src/logfile.rs`, `src/main.tsx`, `frontend_log`).
 
 ## Overlay and click-through
 
 - [x] Frameless transparent always-on-top window, no shadow, not resizable, file drop disabled, shown without stealing focus. The window is created visible so WebView2 composites; a later hide/show toggles the controller or the surface stays blank (`src-tauri/tauri.conf.json`, `src-tauri/src/lib.rs`, `src-tauri/src/win32.rs`).
 - [x] `WS_THICKFRAME` is cleared so the invisible resize border is not a dead zone (`src-tauri/src/win32.rs`).
-- [x] Window is sized to the visible island plus a 56px shadow gutter. Default island is 240×38, radius 19. Anchor is the primary work-area top center, 8px down (`crates/winsur-core/src/hit_region.rs`, `src-tauri/src/overlay.rs`).
+- [x] Window is sized to the visible island plus a 56px shadow gutter. Default island is 240×38, radius 19. Anchor is the primary work-area top center, 8px down. After the page reports the pill, the window shifts so that measured top-center stays on the anchor even if the pill is not vertically centered (`crates/winsur-core/src/hit_region.rs`, `src-tauri/src/overlay.rs`).
 - [x] Hit testing uses the rounded rect, not the bounding box. Shadow gutter and corner pixels pass through (`crates/winsur-core/src/hit_region.rs`).
 - [x] The main process polls the cursor every 16ms and calls `set_ignore_cursor_events`. This does not depend on a mouse-move forward hook. Ignore is reapplied after every move/resize. During a drag the window captures the pointer (`src-tauri/src/overlay.rs`).
 - [x] The renderer reports `getBoundingClientRect` plus the computed radius, and the hit target tracks that box through the expand/collapse animation. `html`/`body` fill the viewport so the pill stays centered in the gutter instead of sliding into the off-screen top (`src/styles/globals.css`, `src/components/Island/IslandContainer.tsx`, `report_island_metrics`).

@@ -25,6 +25,7 @@ fn main() {
             "stop_dragging",
             "report_island_metrics",
             "set_ignore_mouse_events",
+            "frontend_log",
         ]),
     ))
     .expect("failed to run tauri-build");

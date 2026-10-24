@@ -417,3 +417,20 @@ pub fn report_island_metrics(
 pub fn set_ignore_mouse_events(ignore: bool) {
     let _ = ignore;
 }
+
+/// Page load, layout, and `window.onerror` lines for `%APPDATA%\Winsur\winsur.log`.
+#[tauri::command]
+pub fn frontend_log(message: String) {
+    let mut flat = String::new();
+    for ch in message.chars() {
+        if ch == '\n' || ch == '\r' || ch == '\t' {
+            flat.push(' ');
+        } else {
+            flat.push(ch);
+        }
+        if flat.len() >= 400 {
+            break;
+        }
+    }
+    crate::logfile::write(&format!("frontend: {flat}"));
+}

@@ -28,6 +28,7 @@
     "allow-start-dragging",
     "allow-stop-dragging",
     "allow-report-island-metrics",
-    "allow-set-ignore-mouse-events"
+    "allow-set-ignore-mouse-events",
+    "allow-frontend-log"
   ]
 }

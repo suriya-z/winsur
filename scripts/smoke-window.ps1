@@ -132,13 +132,32 @@ if ($islandHits.Count -gt 0) {
 
 $png = Join-Path $OutDir "$Label.png"
 $shotNote = "screenshot-skipped"
+function Copy-VirtualScreen([System.Drawing.CopyPixelOperation]$Op) {
+    $screen = [System.Windows.Forms.SystemInformation]::VirtualScreen
+    $image = New-Object System.Drawing.Bitmap ([Math]::Max(1, $screen.Width)), ([Math]::Max(1, $screen.Height))
+    $graphics = [System.Drawing.Graphics]::FromImage($image)
+    $graphics.CopyFromScreen($screen.X, $screen.Y, 0, 0, $image.Size, $Op)
+    $graphics.Dispose()
+    return $image
+}
+
 try {
     $bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
-    $bmp = New-Object System.Drawing.Bitmap ([Math]::Max(1, $bounds.Width)), ([Math]::Max(1, $bounds.Height))
-    $graphics = [System.Drawing.Graphics]::FromImage($bmp)
-    $graphics.CopyFromScreen($bounds.X, $bounds.Y, 0, 0, $bmp.Size)
+    # Click-through marks the HWND layered. CaptureBlt includes those pixels.
+    # If that flag comes back black on the VM, fall back to the plain desktop copy.
+    $capture = [System.Drawing.CopyPixelOperation]([int][System.Drawing.CopyPixelOperation]::SourceCopy -bor [int][System.Drawing.CopyPixelOperation]::CaptureBlt)
+    $bmp = Copy-VirtualScreen $capture
+    $blackish = 0
+    for ($i = 0; $i -lt 16; $i++) {
+        $sample = $bmp.GetPixel([int]($bmp.Width * ($i + 0.5) / 16), [int]($bmp.Height / 2))
+        if ($sample.R -lt 8 -and $sample.G -lt 8 -and $sample.B -lt 8) { $blackish++ }
+    }
+    if ($blackish -ge 14) {
+        Write-Output "captureblt looked black; retrying without it"
+        $bmp.Dispose()
+        $bmp = Copy-VirtualScreen ([System.Drawing.CopyPixelOperation]::SourceCopy)
+    }
     $bmp.Save($png, [System.Drawing.Imaging.ImageFormat]::Png)
-    $graphics.Dispose()
     $shotNote = "screenshot=$png ${bounds.Width}x${bounds.Height}"
     Write-Output $shotNote
 } catch {
@@ -195,6 +214,7 @@ elseif ($island.VisW -lt 40 -or $island.VisH -lt 16) {
 }
 if ($sampled -lt 20 -or $dark -lt ($sampled * 0.4)) { $fail += "island pixels not painted (dark $dark / $sampled)" }
 if ($logText -notmatch "frontend=embedded") { $fail += "log missing frontend=embedded" }
+if ($logText -notmatch "frontend: ready") { $fail += "log missing frontend ready (page script did not run)" }
 if ($logText -notmatch "tray ready") { $fail += "log missing tray ready" }
 if ($logText -notmatch "island painted") { $fail += "log missing island painted" }
 if ($logText -notmatch "smoke=ok") { $fail += "log missing smoke=ok" }
