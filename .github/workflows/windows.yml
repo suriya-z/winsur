@@ -98,6 +98,7 @@ jobs:
           # %LOCALAPPDATA%\Winsur when /D is not applied.
           $psi.Arguments = "/S /CURRENTUSER /D=$dest"
           $psi.UseShellExecute = $false
+          $psi.WorkingDirectory = $env:TEMP
           $installer = [System.Diagnostics.Process]::Start($psi)
           if (-not $installer.WaitForExit(180000)) {
             Stop-Process -Id $installer.Id -Force -ErrorAction SilentlyContinue
@@ -105,38 +106,57 @@ jobs:
             exit 1
           }
           Write-Output "installer exit $($installer.ExitCode)"
+          $setupName = [System.IO.Path]::GetFileNameWithoutExtension($setup.Name)
+          $deadline = (Get-Date).AddSeconds(60)
+          do {
+            $still = @(Get-Process -Name $setupName -ErrorAction SilentlyContinue)
+            if ($still.Count -eq 0) { break }
+            Write-Output "setup still running: $($still.Id -join ',')"
+            Start-Sleep -Seconds 1
+          } while ((Get-Date) -lt $deadline)
           if ($installer.ExitCode -ne 0) {
             Write-Error "NSIS installer exit code $($installer.ExitCode)"
             exit 1
           }
-          $searchRoots = @(
+          $portableExe = (Resolve-Path "target\release\winsur.exe").Path
+          $scanRoots = @(
             $dest,
             (Join-Path $env:LOCALAPPDATA "Winsur"),
-            (Join-Path ${env:ProgramFiles} "Winsur")
+            (Join-Path $env:TEMP "placeholder\Winsur"),
+            (Join-Path (Get-Location).Path "placeholder\Winsur"),
+            (Join-Path $setup.DirectoryName "placeholder\Winsur"),
+            (Join-Path ${env:ProgramFiles} "Winsur"),
+            $env:LOCALAPPDATA,
+            $env:TEMP,
+            $setup.DirectoryName,
+            (Get-Location).Path
           )
           $installed = $null
-          foreach ($root in $searchRoots) {
-            foreach ($name in @("winsur.exe", "Winsur.exe")) {
-              $candidate = Join-Path $root $name
-              if (Test-Path -LiteralPath $candidate) { $installed = $candidate; break }
-            }
-            if ($installed) { break }
-            if (Test-Path -LiteralPath $root) {
-              $found = Get-ChildItem -LiteralPath $root -Recurse -Filter *.exe -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -match '^(?i)winsur\.exe$' } |
-                Select-Object -First 1
-              if ($found) { $installed = $found.FullName; break }
+          foreach ($key in @(
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Winsur",
+            "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Winsur"
+          )) {
+            $prop = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
+            if (-not $prop) { Write-Output "reg $key missing"; continue }
+            Write-Output "reg $key location=$($prop.InstallLocation) uninstall=$($prop.UninstallString)"
+            if ($prop.InstallLocation) {
+              $fromReg = Join-Path ($prop.InstallLocation.Trim('"')) "winsur.exe"
+              if (Test-Path -LiteralPath $fromReg) { $installed = (Resolve-Path -LiteralPath $fromReg).Path; break }
             }
           }
           if (-not $installed) {
-            foreach ($root in $searchRoots) {
-              Write-Output "---- $root ----"
-              if (Test-Path -LiteralPath $root) {
-                Get-ChildItem -LiteralPath $root -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Output $_.FullName }
-              } else {
-                Write-Output "(missing)"
+            foreach ($root in $scanRoots) {
+              if (-not (Test-Path -LiteralPath $root)) { continue }
+              $found = @(Get-ChildItem -LiteralPath $root -Recurse -Filter "winsur.exe" -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -ne $portableExe })
+              if ($found.Count -gt 0) {
+                $found | ForEach-Object { Write-Output "candidate $($_.FullName)" }
+                $installed = $found[0].FullName
+                break
               }
             }
+          }
+          if (-not $installed) {
             Write-Error "installed winsur.exe not found"
             exit 1
           }
