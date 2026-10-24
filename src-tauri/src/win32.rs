@@ -127,12 +127,19 @@ pub fn show_inactive(window: &WebviewWindow) {
     }
 }
 
-pub fn foreground_hwnd() -> HWND {
-    unsafe { GetForegroundWindow() }
+pub fn foreground_raw() -> isize {
+    unsafe { GetForegroundWindow().0 as isize }
+}
+
+pub fn hwnd_raw(window: &WebviewWindow) -> Option<isize> {
+    hwnd_of(window).map(|hwnd| hwnd.0 as isize)
 }
 
 /// If WebView2's show activated us, give the foreground back to whoever had it.
-pub fn restore_foreground_if_ours(prev: HWND, ours: HWND) {
+/// Raw pointers because `HWND` is not `Send`.
+pub fn restore_foreground_if_ours(prev: isize, ours: isize) {
+    let prev = HWND(prev as *mut c_void);
+    let ours = HWND(ours as *mut c_void);
     unsafe {
         if prev.0.is_null() || ours.0.is_null() || !IsWindow(Some(prev)).as_bool() {
             return;

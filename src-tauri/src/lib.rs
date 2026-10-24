@@ -56,8 +56,8 @@ pub(crate) fn reveal_island(app: &AppHandle, focus: bool) {
     if let Some(state) = app.try_state::<AppState>() {
         state.overlay.place(&window);
     }
-    let prev = win32::foreground_hwnd();
-    let ours = win32::hwnd_of(&window);
+    let prev = win32::foreground_raw();
+    let ours = win32::hwnd_raw(&window);
     let _ = window.unminimize();
     let _ = window.set_always_on_top(true);
     if focus {
