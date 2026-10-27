@@ -83,13 +83,46 @@ def register(ctx) -> None:
             "agent_type": "hermes",
         })
 
+    def _reply_text(value) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, dict):
+            for key in ("text", "content", "message", "response"):
+                found = _reply_text(value.get(key))
+                if found:
+                    return found
+            return ""
+        if isinstance(value, (list, tuple)):
+            parts = [_reply_text(item) for item in value]
+            return "\n".join(part for part in parts if part).strip()
+        return ""
+
     def on_stream_end(**kwargs):
-        _post_event({
+        payload = {
             "hook_event_name": "Stop",
             "session_id": _sid(kwargs),
             "cwd": _cwd(kwargs),
             "agent_type": "hermes",
-        })
+        }
+        reply = ""
+        for key in (
+            "response",
+            "text",
+            "message",
+            "content",
+            "assistant_message",
+            "final_response",
+            "completion",
+            "output",
+        ):
+            reply = _reply_text(kwargs.get(key))
+            if reply:
+                break
+        if reply:
+            payload["last_assistant_message"] = reply[:4000]
+        _post_event(payload)
 
     def on_session_end(**kwargs):
         _post_event({

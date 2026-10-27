@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 use winsur_core::agent::Session;
+use winsur_core::focus::jump_chrome;
 use winsur_core::hooks::{self, resolve_hook_script};
 use winsur_core::settings;
 use winsur_core::ssh::SshManager;
@@ -128,13 +129,30 @@ pub async fn focus_terminal(
     let Some((_, cwd, name, agent_type)) = session_fields(&state, &session_id) else {
         return Ok(json!({ "ok": false, "detail": "session not found" }));
     };
-    release_island(&app, &state).await;
+    // Jump must not hide the window. release_island drops the taskbar button,
+    // and the later reveal toggles the WebView2 controller; that is what made
+    // the notch vanish after a successful focus. Paste still uses release_island.
+    let policy = jump_chrome();
+    if policy.hide_window {
+        release_island(&app, &state).await;
+    }
     let result = tauri::async_runtime::spawn_blocking(move || {
         win32::focus_terminal(&cwd, &name, &agent_type)
     })
     .await
     .map_err(|err| err.to_string())?;
-    restore_island(&app, &state, !result.ok).await;
+    if policy.hide_window {
+        restore_island(&app, &state, policy.steal_focus || !result.ok).await;
+    } else if let Some(window) = window(&app) {
+        let _ = window.set_always_on_top(policy.always_on_top);
+    }
+    let visible = window(&app)
+        .and_then(|window| window.is_visible().ok())
+        .unwrap_or(false);
+    crate::logfile::write(&format!(
+        "jump: island stays visible session={session_id} visible={visible} ok={} detail={}",
+        result.ok, result.detail
+    ));
     if !result.ok {
         notify(&app, "Jump failed", &jump_message(&result.detail));
     }

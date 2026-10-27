@@ -1,14 +1,12 @@
 // Agent card — permissions = required; free-chat reply = optional (user opens)
 
-import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ShieldAlert, MessageSquare, X } from "lucide-react";
+import { ShieldAlert, X } from "lucide-react";
 import { StatusDot } from "../shared/StatusDot";
-import { AgentIcon } from "../shared/AgentIcon";
-import { getAgentColor, getAgentLabel } from "../shared/agentMeta";
+import { getAgentLabel } from "../shared/agentMeta";
 import { QuestionReply } from "./QuestionReply";
 import { PlanReview } from "./PlanReview";
-import { respondPermission, focusTerminal } from "../../lib/bridge";
+import { dismissAgent, respondPermission, focusTerminal } from "../../lib/bridge";
 import { playSound } from "../../lib/sounds";
 import type { AgentSession } from "../../types/agent";
 
@@ -21,14 +19,11 @@ const STATUS_INFO: Record<string, { text: string; color: string }> = {
 };
 
 export function AgentCard({ agent }: { agent: AgentSession }) {
-  const agentColor = getAgentColor(agent.agent_type);
   const agentLabel = getAgentLabel(agent.agent_type);
   const hasPending = agent.pending_permission !== null;
   /** Real required question from agent (elicitation / AskUser) — auto show */
   const requiredQuestion = agent.pending_question;
   const pendingPlan = agent.pending_plan;
-  /** Optional compose box — user toggles; never auto for normal chat */
-  const [showComposer, setShowComposer] = useState(false);
 
   const info = STATUS_INFO[agent.status] || STATUS_INFO.idle;
 
@@ -57,13 +52,8 @@ export function AgentCard({ agent }: { agent: AgentSession }) {
     }
   };
 
-  const openComposer = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setShowComposer((v) => !v);
-  };
-
-  const showReply =
-    !!requiredQuestion || (showComposer && !hasPending);
+  const showReply = !pendingPlan && (!!requiredQuestion || !hasPending);
+  const canJump = !hasPending && !requiredQuestion && !pendingPlan;
 
   return (
     <motion.div
@@ -74,11 +64,6 @@ export function AgentCard({ agent }: { agent: AgentSession }) {
       exit={{ opacity: 0, y: 4, scale: 0.98 }}
       transition={{ type: "spring", stiffness: 300, damping: 25 }}
       className={`no-drag ${hasPending ? "card-glow-permission" : requiredQuestion || pendingPlan ? "card-glow-question" : ""} ${agent.status === "thinking" ? "shimmer-thinking" : ""}`}
-      onClick={
-        !hasPending && !requiredQuestion && !pendingPlan && !showComposer
-          ? handleJump
-          : undefined
-      }
       style={{
         background: hasPending
           ? "rgba(251, 191, 36, 0.04)"
@@ -92,36 +77,22 @@ export function AgentCard({ agent }: { agent: AgentSession }) {
           : requiredQuestion || pendingPlan
           ? "1px solid rgba(148, 163, 184, 0.18)"
           : "1px solid var(--border-default)",
-        cursor:
-          hasPending || requiredQuestion || pendingPlan || showComposer
-            ? "default"
-            : "pointer",
+        cursor: "default",
         transition: "border-color 0.3s, box-shadow 0.3s",
       }}
     >
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-        <div
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: 9,
-            background: `color-mix(in srgb, ${agentColor} 12%, #0a0a0a)`,
-            border: `1px solid color-mix(in srgb, ${agentColor} 22%, transparent)`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-          }}
-        >
-          <AgentIcon type={agent.agent_type} size={14} color={agentColor} />
-        </div>
-
+      <div
+        onClick={canJump ? handleJump : undefined}
+        style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-2)", cursor: canJump ? "pointer" : "default" }}
+      >
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
-              fontSize: 13,
+              fontSize: "var(--type-name)",
               fontWeight: 600,
-              lineHeight: 1.2,
+              lineHeight: 1.25,
+              letterSpacing: "-0.011em",
+              textWrap: "balance",
               color: "var(--text-primary)",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -132,11 +103,12 @@ export function AgentCard({ agent }: { agent: AgentSession }) {
           </div>
           <div
             style={{
-              fontSize: 11,
-              marginTop: 2,
+              fontSize: "var(--type-meta)",
+              fontWeight: 500,
+              marginTop: "var(--space-1)",
               display: "flex",
               alignItems: "center",
-              gap: 4,
+              gap: "var(--space-1)",
               color: info.color,
             }}
           >
@@ -156,8 +128,9 @@ export function AgentCard({ agent }: { agent: AgentSession }) {
           {agent.cwd && (
             <div
               style={{
-                fontSize: 9.5,
-                marginTop: 2,
+                fontSize: "var(--type-meta)",
+                fontWeight: 400,
+                marginTop: "var(--space-1)",
                 color: "var(--text-muted)",
                 fontFamily: "var(--font-mono)",
                 overflow: "hidden",
@@ -174,50 +147,42 @@ export function AgentCard({ agent }: { agent: AgentSession }) {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 4,
+            gap: "var(--space-1)",
             flexShrink: 0,
-            marginTop: 2,
           }}
         >
-          {/* Optional message — never auto-open for normal chat */}
-          {!hasPending && (
-            <motion.button
-              className="no-drag"
-              whileHover={{ scale: 1.06, backgroundColor: "rgba(255,255,255,0.08)" }}
-              whileTap={{ scale: 0.94 }}
-              onClick={openComposer}
-              title={showComposer ? "Close message box" : "Send optional message to agent"}
-              style={{
-                padding: "4px 6px",
-                borderRadius: 6,
-                border: "1px solid var(--border-subtle)",
-                background: showComposer ? "rgba(255,255,255,0.08)" : "transparent",
-                color: showComposer ? "var(--text-primary)" : "var(--text-muted)",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-              }}
-            >
-              {showComposer ? <X size={12} /> : <MessageSquare size={12} />}
-            </motion.button>
-          )}
-          <span
+          <motion.button
+            className="no-drag"
+            type="button"
+            aria-label={`Dismiss ${agent.name || agentLabel}`}
+            whileHover={{ scale: 1.06, backgroundColor: "rgba(255,255,255,0.08)" }}
+            whileTap={{ scale: 0.94 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              dismissAgent(agent.id).catch(() => {});
+            }}
+            title="Dismiss"
             style={{
-              padding: "2px 8px",
+              width: 24,
+              height: 24,
+              padding: 0,
               borderRadius: 6,
-              fontSize: 10,
-              fontWeight: 600,
-              background: `color-mix(in srgb, ${agentColor} 12%, #0a0a0a)`,
-              color: agentColor,
-              border: `1px solid color-mix(in srgb, ${agentColor} 22%, transparent)`,
+              border: "1px solid var(--border-subtle)",
+              background: "transparent",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
-            {agentLabel}
-          </span>
+            <X size={12} />
+          </motion.button>
           <span
             style={{
-              fontSize: 10.5,
-              color: "var(--text-muted)",
+              fontSize: "var(--type-meta)",
+              fontWeight: 500,
+              color: "var(--text-secondary)",
               fontVariantNumeric: "tabular-nums",
             }}
           >
@@ -238,16 +203,9 @@ export function AgentCard({ agent }: { agent: AgentSession }) {
           <QuestionReply
             key={requiredQuestion ? "required" : "optional"}
             sessionId={agent.id}
-            question={
-              requiredQuestion ||
-              "Optional — message will be typed into the agent terminal"
-            }
+            question={requiredQuestion || ""}
+            lastReply={agent.last_reply}
             optional={!requiredQuestion}
-            onClose={
-              requiredQuestion
-                ? undefined
-                : () => setShowComposer(false)
-            }
           />
         )}
       </AnimatePresence>

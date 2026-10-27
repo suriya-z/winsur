@@ -57,6 +57,7 @@ export interface AgentSession {
   pending_question: string | null;
   pending_plan?: PendingPlan | null;
   last_tool: string | null;
+  last_reply?: string | null;
   remote_host?: string | null;
 }
 

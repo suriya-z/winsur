@@ -25,7 +25,7 @@ Nothing in this file may be left unchecked. CI fails if a line still starts with
 - [x] The renderer reports `getBoundingClientRect` plus the computed radius, and the hit target tracks that box through the expand/collapse animation. `html`/`body` fill the viewport so the pill stays centered in the gutter instead of sliding into the off-screen top (`src/styles/globals.css`, `src/components/Island/IslandContainer.tsx`, `report_island_metrics`).
 - [x] Drag starts after 5px, polls every 8ms, and has a 15s safety stop. Anchor is the island's top center (`src/lib/bridge.ts`, `src-tauri/src/overlay.rs`).
 - [x] `set_ignore_mouse_events` from the UI is accepted and ignored, so it cannot fight the poll (`src-tauri/src/commands.rs`).
-- [x] Jump/reply/plan hide the island (not topmost, click-through, hidden) for 220ms before Win32 focus, then restore. A successful jump does not focus Winsur; a failed jump does (`src-tauri/src/commands.rs`).
+- [x] Reply and plan hide the island (not topmost, click-through, hidden) for 220ms before pasting, then restore and focus Winsur. Jump does not hide the window or drop the taskbar button: the island stays always-on-top and does not take focus (`crates/winsur-core/src/focus.rs` `jump_chrome`, `src-tauri/src/commands.rs`). A failed jump notifies and still leaves the island up.
 
 ## Hook server
 

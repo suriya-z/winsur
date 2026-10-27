@@ -460,6 +460,8 @@ pub struct Session {
     pub pending_question: Option<String>,
     pub pending_plan: Option<PendingPlan>,
     pub last_tool: Option<String>,
+    #[serde(default)]
+    pub last_reply: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_host: Option<String>,
     #[serde(skip)]
@@ -696,6 +698,7 @@ impl SessionManager {
             pending_question: None,
             pending_plan: None,
             last_tool: None,
+            last_reply: None,
             remote_host: remote,
             hooked: false,
             discovered: false,
@@ -858,6 +861,9 @@ impl SessionManager {
         let session = inner.sessions.get_mut(&id)?;
 
         let tool_name = str_field(&payload, "tool_name");
+        if let Some(reply) = capture_assistant_reply(&event_name, &payload) {
+            session.last_reply = Some(reply);
+        }
         match event_name.as_str() {
             "SessionStart" => {
                 session.status = "idle".into();
@@ -1322,6 +1328,124 @@ impl SessionManager {
     }
 }
 
+fn limit_reply(text: &str) -> String {
+    const MAX: usize = 4000;
+    let trimmed = text.trim();
+    if trimmed.chars().count() <= MAX {
+        return trimmed.to_string();
+    }
+    let end = trimmed
+        .char_indices()
+        .nth(MAX)
+        .map(|(idx, _)| idx)
+        .unwrap_or(trimmed.len());
+    format!("{}…", &trimmed[..end])
+}
+
+fn reply_leaf(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(limit_reply(trimmed))
+            }
+        }
+        Value::Array(items) => {
+            let parts: Vec<String> = items.iter().filter_map(reply_leaf).collect();
+            if parts.is_empty() {
+                None
+            } else {
+                Some(limit_reply(&parts.join("\n")))
+            }
+        }
+        Value::Object(map) => {
+            for key in ["text", "content", "message", "response"] {
+                if let Some(child) = map.get(key) {
+                    if let Some(text) = reply_leaf(child) {
+                        return Some(text);
+                    }
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn reply_from_fields(payload: &Value) -> Option<String> {
+    for key in [
+        "last_assistant_message",
+        "lastAssistantMessage",
+        "assistant_message",
+        "assistantMessage",
+        "final_response",
+        "finalResponse",
+        "response",
+    ] {
+        if let Some(value) = payload.get(key) {
+            if let Some(text) = reply_leaf(value) {
+                return Some(text);
+            }
+        }
+    }
+    None
+}
+
+fn transcript_is_assistant(value: &Value) -> bool {
+    let kind = value.get("type").and_then(as_str).unwrap_or("");
+    let role = value
+        .get("role")
+        .and_then(as_str)
+        .or_else(|| {
+            value
+                .get("message")
+                .and_then(|message| message.get("role"))
+                .and_then(as_str)
+        })
+        .unwrap_or("");
+    kind == "assistant" || role == "assistant"
+}
+
+fn reply_from_transcript(payload: &Value) -> Option<String> {
+    let path = str_field(payload, "transcript_path");
+    if path.is_empty() {
+        return None;
+    }
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let start = len.saturating_sub(128 * 1024);
+    use std::io::{Read, Seek, SeekFrom};
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut buf = String::new();
+    file.read_to_string(&mut buf).ok()?;
+    let mut latest = None;
+    for line in buf.lines() {
+        let Ok(value) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if !transcript_is_assistant(&value) {
+            continue;
+        }
+        let body = value.get("message").unwrap_or(&value);
+        if let Some(text) = reply_leaf(body.get("content").unwrap_or(body)) {
+            latest = Some(text);
+        }
+    }
+    latest
+}
+
+fn capture_assistant_reply(event_name: &str, payload: &Value) -> Option<String> {
+    if let Some(text) = reply_from_fields(payload) {
+        return Some(text);
+    }
+    if matches!(event_name, "Stop" | "StopFailure") {
+        return reply_from_transcript(payload);
+    }
+    None
+}
+
 fn plan_text(payload: &Value) -> String {
     if let Some(s) = payload.get("plan").and_then(as_str) {
         if !s.is_empty() {
@@ -1507,6 +1631,57 @@ mod tests {
             }))
             .unwrap();
         assert_eq!(cursor.agent_type, "cursor");
+
+        let replied = mgr
+            .handle_event(&json!({
+                "hook_event_name": "Stop",
+                "agent_type": "hermes",
+                "session_id": "hermes-1",
+                "cwd": "C:\\work\\hermes",
+                "last_assistant_message": "The build finished.\nAll tests passed."
+            }))
+            .unwrap();
+        assert_eq!(
+            replied.last_reply.as_deref(),
+            Some("The build finished.\nAll tests passed.")
+        );
+        let still = mgr
+            .handle_event(&json!({
+                "hook_event_name": "PreToolUse",
+                "agent_type": "hermes",
+                "session_id": "hermes-1",
+                "cwd": "C:\\work\\hermes",
+                "tool_name": "read"
+            }))
+            .unwrap();
+        assert_eq!(
+            still.last_reply.as_deref(),
+            Some("The build finished.\nAll tests passed.")
+        );
+
+        let dir = std::env::temp_dir().join(format!("winsur-transcript-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("session.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hi\"}}\n",
+                "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"First\"}]}}\n",
+                "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Latest reply\"}]}}\n",
+            ),
+        )
+        .unwrap();
+        let from_file = mgr
+            .handle_event(&json!({
+                "hook_event_name": "Stop",
+                "agent_type": "claude-code",
+                "session_id": "claude-transcript",
+                "cwd": "C:\\work\\transcript",
+                "transcript_path": path.display().to_string()
+            }))
+            .unwrap();
+        assert_eq!(from_file.last_reply.as_deref(), Some("Latest reply"));
+        let _ = std::fs::remove_dir_all(dir);
         assert_eq!(cursor.cwd, "C:\\work\\app");
         assert!(mgr.get_sessions().iter().any(|s| s.agent_type == "cursor"));
         assert!(mgr

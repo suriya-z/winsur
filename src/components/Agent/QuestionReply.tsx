@@ -2,20 +2,96 @@
 
 import { useState, useRef, useEffect } from "react";
 import { motion } from "motion/react";
-import { MessageCircle, Send } from "lucide-react";
+import { ChevronDown, Send } from "lucide-react";
 import { replyQuestion } from "../../lib/bridge";
 
 interface QuestionReplyProps {
   sessionId: string;
   question: string;
-  /** Optional free-chat (user opened) vs required agent question */
+  lastReply?: string | null;
+  /** Optional free-chat vs required agent question */
   optional?: boolean;
   onClose?: () => void;
+}
+
+function ReplyPreview({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const oneLine = text.replace(/\s+/g, " ").trim();
+  return (
+    <div style={{ marginBottom: "var(--space-2)" }}>
+      <button
+        type="button"
+        className="no-drag"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--space-1)",
+          width: "100%",
+          padding: 0,
+          border: "none",
+          background: "transparent",
+          color: "var(--text-secondary)",
+          cursor: "pointer",
+          textAlign: "left",
+          fontFamily: "var(--font-sans)",
+          fontSize: "var(--type-body)",
+          fontWeight: 400,
+          lineHeight: 1.4,
+        }}
+      >
+        <ChevronDown
+          size={14}
+          style={{
+            flexShrink: 0,
+            color: "var(--text-muted)",
+            transform: open ? "rotate(0deg)" : "rotate(-90deg)",
+          }}
+        />
+        <span
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            minWidth: 0,
+          }}
+        >
+          {oneLine}
+        </span>
+      </button>
+      {open && (
+        <div
+          className="reply-scroll"
+          style={{
+            marginTop: "var(--space-1)",
+            maxHeight: 160,
+            overflowY: "auto",
+            padding: "8px 10px",
+            background: "var(--bg-inset)",
+            borderRadius: 10,
+            border: "1px solid var(--border-default)",
+            color: "var(--text-primary)",
+            fontSize: "var(--type-body)",
+            lineHeight: 1.45,
+            whiteSpace: "pre-wrap",
+            overflowWrap: "anywhere",
+            userSelect: "text",
+            WebkitUserSelect: "text",
+            textWrap: "pretty",
+          }}
+        >
+          {text}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function QuestionReply({
   sessionId,
   question,
+  lastReply,
   optional = false,
   onClose,
 }: QuestionReplyProps) {
@@ -26,8 +102,8 @@ export function QuestionReply({
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+    if (!optional) inputRef.current?.focus();
+  }, [optional]);
 
   const handleSend = async () => {
     if (!reply.trim() || sending) return;
@@ -80,37 +156,43 @@ export function QuestionReply({
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 5,
-          marginBottom: 6,
-          fontSize: 11,
-          color: optional ? "var(--text-muted)" : "var(--accent-blue)",
-          fontWeight: 500,
-        }}
-      >
-        <MessageCircle size={12} />
-        {optional ? "Optional message to terminal" : "Agent needs a response"}
-      </div>
+      {!optional && (
+        <div
+          style={{
+            marginBottom: "var(--space-2)",
+            fontSize: "var(--type-meta)",
+            color: "var(--accent-blue)",
+            fontWeight: 600,
+          }}
+        >
+          Agent needs a response
+        </div>
+      )}
 
-      <div
-        style={{
-          fontSize: 11,
-          padding: "8px 10px",
-          background: "var(--bg-inset)",
-          borderRadius: 10,
-          border: "1px solid var(--border-default)",
-          marginBottom: 8,
-          lineHeight: 1.6,
-          color: "var(--text-secondary)",
-          maxHeight: 80,
-          overflowY: "auto",
-        }}
-      >
-        {question}
-      </div>
+      {!optional && question && (
+        <div
+          className="reply-scroll"
+          style={{
+            fontSize: "var(--type-body)",
+            padding: "8px 10px",
+            background: "var(--bg-inset)",
+            borderRadius: 10,
+            border: "1px solid var(--border-default)",
+            marginBottom: "var(--space-2)",
+            lineHeight: 1.45,
+            color: "var(--text-secondary)",
+            maxHeight: 160,
+            overflowY: "auto",
+            whiteSpace: "pre-wrap",
+            userSelect: "text",
+            WebkitUserSelect: "text",
+          }}
+        >
+          {question}
+        </div>
+      )}
+
+      {optional && lastReply?.trim() && <ReplyPreview text={lastReply.trim()} />}
 
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
         <input
@@ -120,7 +202,7 @@ export function QuestionReply({
           value={reply}
           onChange={(e) => setReply(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={optional ? "Type optional message..." : "Type your answer..."}
+          placeholder={optional ? "Reply to agent" : "Type your answer..."}
           disabled={sending}
           style={{
             flex: 1,
@@ -129,7 +211,7 @@ export function QuestionReply({
             border: "1px solid var(--border-default)",
             background: "var(--bg-inset)",
             color: "var(--text-primary)",
-            fontSize: 12,
+            fontSize: "var(--type-body)",
             fontFamily: "var(--font-sans)",
             outline: "none",
           }}

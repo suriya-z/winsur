@@ -19,6 +19,26 @@ pub struct ScoredWindow {
     pub window: TopWindow,
 }
 
+/// What the shell may do to its own window while focusing an agent.
+/// Jump keeps the notch on screen. Paste flows hide it so keystrokes land
+/// in the terminal, then show it again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct JumpChrome {
+    pub hide_window: bool,
+    pub keep_taskbar: bool,
+    pub always_on_top: bool,
+    pub steal_focus: bool,
+}
+
+pub fn jump_chrome() -> JumpChrome {
+    JumpChrome {
+        hide_window: false,
+        keep_taskbar: true,
+        always_on_top: true,
+        steal_focus: false,
+    }
+}
+
 pub fn prefer_name(agent_type: &str) -> &'static str {
     match agent_type {
         "grok-build" => "grok",
@@ -274,6 +294,20 @@ pub fn agent_process_alive(processes: &[ProcessInfo]) -> bool {
         let n = n.strip_suffix(".exe").unwrap_or(&n);
         matches!(n, "grok" | "claude" | "codex")
     })
+}
+
+#[cfg(test)]
+mod jump_chrome_tests {
+    use super::*;
+
+    #[test]
+    fn jump_leaves_the_island_on_screen_and_on_the_taskbar() {
+        let chrome = jump_chrome();
+        assert!(!chrome.hide_window);
+        assert!(chrome.keep_taskbar);
+        assert!(chrome.always_on_top);
+        assert!(!chrome.steal_focus);
+    }
 }
 
 #[cfg(test)]

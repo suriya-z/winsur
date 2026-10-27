@@ -93,7 +93,7 @@ export function CollapsedView() {
         <motion.div
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
-          className="badge-bounce"
+          className="badge-arrive"
           style={{
             minWidth: 16,
             height: 16,
