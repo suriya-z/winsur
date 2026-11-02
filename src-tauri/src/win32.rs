@@ -36,12 +36,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_STYLE, HWND_TOPMOST,
     SC_RESTORE, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
     SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOW,
-    SW_SHOWNOACTIVATE, WM_SYSCOMMAND, WNDENUMPROC, WS_THICKFRAME,
+    SW_SHOWNOACTIVATE, WM_SYSCOMMAND, WNDENUMPROC, WS_MINIMIZEBOX, WS_THICKFRAME,
 };
 use winsur_core::discover::ProcessInfo;
 use winsur_core::focus::{
-    agent_process_alive, ancestor_pids, build_needles, find_agent_pid, pick_window, prefer_name,
-    TopWindow,
+    agent_process_alive, ancestor_pids, build_needles, find_agent_pid, folder_label, pick_window,
+    prefer_name, taskbar_chrome, TopWindow,
 };
 
 const ASFW_ANY: u32 = u32::MAX;
@@ -93,14 +93,20 @@ pub fn hwnd_of(window: &WebviewWindow) -> Option<HWND> {
 }
 
 /// Drop the thick frame so its invisible resize border is not a dead click zone,
-/// matching Electron `thickFrame: false`.
+/// matching Electron `thickFrame: false`. Also drops `WS_MINIMIZEBOX` when the
+/// taskbar policy forbids minimize: a taskbar click otherwise minimizes the
+/// transparent window and the notch never paints again.
 pub fn strip_thick_frame(window: &WebviewWindow) {
     let Some(hwnd) = hwnd_of(window) else {
         return;
     };
     unsafe {
-        let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
-        SetWindowLongPtrW(hwnd, GWL_STYLE, style & !(WS_THICKFRAME.0 as isize));
+        let mut style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        style &= !(WS_THICKFRAME.0 as isize);
+        if !taskbar_chrome().allow_minimize {
+            style &= !(WS_MINIMIZEBOX.0 as isize);
+        }
+        SetWindowLongPtrW(hwnd, GWL_STYLE, style);
     }
 }
 
@@ -628,14 +634,16 @@ fn locate(
     cwd: &str,
     name: &str,
     agent_type: &str,
+    live_pid: Option<u32>,
     processes: &[ProcessInfo],
 ) -> Result<TopWindow, String> {
     let needles = build_needles(cwd, name, agent_type);
     let prefer = prefer_name(agent_type);
-    let agent_pid = find_agent_pid(processes, prefer);
+    let folder = folder_label(cwd);
+    let agent_pid = find_agent_pid(processes, agent_type, prefer, cwd, live_pid);
     let tree = ancestor_pids(processes, agent_pid);
     let windows = list_top_windows(processes);
-    if let Some(best) = pick_window(&windows, &needles, prefer, &tree) {
+    if let Some(best) = pick_window(&windows, &needles, prefer, &tree, &folder, name) {
         return Ok(best.window);
     }
     if !agent_process_alive(processes) {
@@ -645,14 +653,19 @@ fn locate(
     }
 }
 
-pub fn focus_terminal(cwd: &str, name: &str, agent_type: &str) -> SendOutcome {
+pub fn focus_terminal(
+    cwd: &str,
+    name: &str,
+    agent_type: &str,
+    live_pid: Option<u32>,
+) -> SendOutcome {
     let Some(processes) = list_processes() else {
         return SendOutcome {
             ok: false,
             detail: "FAIL|NO_WINDOW|process list unreadable".into(),
         };
     };
-    let window = match locate(cwd, name, agent_type, &processes) {
+    let window = match locate(cwd, name, agent_type, live_pid, &processes) {
         Ok(w) => w,
         Err(detail) => return SendOutcome { ok: false, detail },
     };
@@ -669,7 +682,13 @@ pub fn focus_terminal(cwd: &str, name: &str, agent_type: &str) -> SendOutcome {
     SendOutcome { ok, detail }
 }
 
-pub fn send_text(cwd: &str, name: &str, agent_type: &str, message: &str) -> SendOutcome {
+pub fn send_text(
+    cwd: &str,
+    name: &str,
+    agent_type: &str,
+    message: &str,
+    live_pid: Option<u32>,
+) -> SendOutcome {
     let text = message.trim();
     if text.is_empty() {
         return SendOutcome {
@@ -683,7 +702,7 @@ pub fn send_text(cwd: &str, name: &str, agent_type: &str, message: &str) -> Send
             detail: "FAIL|NO_WINDOW|process list unreadable".into(),
         };
     };
-    let window = match locate(cwd, name, agent_type, &processes) {
+    let window = match locate(cwd, name, agent_type, live_pid, &processes) {
         Ok(w) => w,
         Err(detail) => return SendOutcome { ok: false, detail },
     };

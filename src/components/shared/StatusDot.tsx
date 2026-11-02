@@ -9,7 +9,7 @@ const STATUS_STYLES: Record<AgentStatus, { color: string; className: string; lab
   thinking: { color: "var(--status-thinking)", className: "status-dot-thinking", label: "思考中" },
   waiting: { color: "var(--status-waiting)", className: "status-dot-waiting", label: "等待输入" },
   error: { color: "var(--status-error)", className: "status-dot-error", label: "错误" },
-  disconnected: { color: "var(--status-idle)", className: "", label: "已断开" },
+  disconnected: { color: "var(--status-offline)", className: "", label: "已断开" },
 };
 
 interface StatusDotProps {

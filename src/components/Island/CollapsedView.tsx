@@ -23,7 +23,7 @@ export function CollapsedView() {
 
   const summaryColor = () => {
     if (hasPending) return "var(--accent-yellow)";
-    if (hasAnyPending) return "var(--accent-blue)";
+    if (hasAnyPending) return "var(--status-thinking)";
     if (workingCount > 0) return "var(--text-secondary)";
     if (activeCount > 0) return "var(--accent-green)";
     return "var(--text-secondary)";
@@ -32,7 +32,7 @@ export function CollapsedView() {
   const dotColor = hasPending
     ? "#fbbf24"
     : hasAnyPending
-    ? "#94a3b8"
+    ? "#60a5fa"
     : activeCount > 0
     ? "#4ade80"
     : "#3f3f46";
@@ -53,7 +53,7 @@ export function CollapsedView() {
           boxShadow: hasPending
             ? "0 0 10px rgba(251,191,36,0.45)"
             : hasAnyPending
-            ? "0 0 8px rgba(148,163,184,0.35)"
+            ? "0 0 8px rgba(96,165,250,0.45)"
             : activeCount > 0
             ? "0 0 8px rgba(74,222,128,0.3)"
             : "none",

@@ -17,7 +17,7 @@ Nothing in this file may be left unchecked. CI fails if a line still starts with
 
 ## Overlay and click-through
 
-- [x] Frameless transparent always-on-top window, no shadow, not resizable, file drop disabled, shown without stealing focus. The window is created visible so WebView2 composites; a later hide/show toggles the controller or the surface stays blank (`src-tauri/tauri.conf.json`, `src-tauri/src/lib.rs`, `src-tauri/src/win32.rs`).
+- [x] Frameless transparent always-on-top window, no shadow, not resizable, not minimizable, file drop disabled, shown without stealing focus. A taskbar click must not leave the notch minimized: `minimizable` is false and `WS_MINIMIZEBOX` is cleared, and if Windows still minimizes the window the cursor poll restores it and toggles the WebView2 controller (`taskbar_chrome`, `src-tauri/tauri.conf.json`, `src-tauri/src/lib.rs`, `src-tauri/src/overlay.rs`, `src-tauri/src/win32.rs`). The window is created visible so WebView2 composites; a later hide/show toggles the controller or the surface stays blank.
 - [x] `WS_THICKFRAME` is cleared so the invisible resize border is not a dead zone (`src-tauri/src/win32.rs`).
 - [x] Window is sized to the visible island plus a 56px shadow gutter. Default island is 240×38, radius 19. Anchor is the primary work-area top center, 8px down. After the page reports the pill, the window shifts so that measured top-center stays on the anchor even if the pill is not vertically centered (`crates/winsur-core/src/hit_region.rs`, `src-tauri/src/overlay.rs`).
 - [x] Hit testing uses the rounded rect, not the bounding box. Shadow gutter and corner pixels pass through (`crates/winsur-core/src/hit_region.rs`).
@@ -69,7 +69,7 @@ Nothing in this file may be left unchecked. CI fails if a line still starts with
 
 ## Jump, reply, plan
 
-- [x] Window search uses `EnumWindows` (not `MainWindowHandle`), the same title/process filters, and the same score (terminal host, agent name, folder needle, parent-process tree) (`crates/winsur-core/src/focus.rs`, `src-tauri/src/win32.rs`).
+- [x] Window search uses `EnumWindows` (not `MainWindowHandle`) and the same title/process filters. The score still prefers a terminal host, the agent name, the folder needle, and the parent-process tree, but a different product's title and an unrelated editor are penalties, generic host words are not title needles, and the tree is only the session's own pid (cwd on the command line, or the single live process). Unknown agent types do not fall through to Grok (`crates/winsur-core/src/focus.rs`, `src-tauri/src/win32.rs`).
 - [x] Foreground is taken with the Alt-key trick, `AttachThreadInput`, and `SetForegroundWindow`, then checked. Failure details still contain `AGENT_EXITED`, `NO_WINDOW`, or `NO_FOCUS`, and the same notification text is shown (`src-tauri/src/win32.rs`, `src-tauri/src/commands.rs`).
 - [x] Terminal reply and plan approve/feedback copy Unicode text to the clipboard and send Ctrl+V, Enter. Success requires the target to still be foreground. Plan clear and question clear run only after a successful send (`src-tauri/src/win32.rs`, `src-tauri/src/commands.rs`).
 

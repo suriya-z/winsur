@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -14,6 +14,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 use winsur_core::agent::{DiscoverInfo, SessionManager};
 use winsur_core::discover::{collect_artifacts, plan_discoveries};
+use winsur_core::focus::taskbar_chrome;
 use winsur_core::hooks::{auto_install_on_launch, resolve_hook_script};
 use winsur_core::server::HookServer;
 use winsur_core::ssh::SshManager;
@@ -36,6 +37,47 @@ pub struct AppState {
 }
 
 static QUITTING: AtomicBool = AtomicBool::new(false);
+static RESTORING: AtomicBool = AtomicBool::new(false);
+static LAST_RESTORE_MS: AtomicU64 = AtomicU64::new(0);
+
+fn unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// A taskbar click minimizes this always-on-top transparent window. WebView2
+/// then stays invisible after the parent is restored, so the notch looks gone
+/// for good. Put it back on the work area and toggle the controller.
+pub(crate) fn restore_minimized_notch(window: &tauri::WebviewWindow) {
+    if !taskbar_chrome().restore_if_minimized {
+        return;
+    }
+    if window.is_minimized().ok() != Some(true) {
+        return;
+    }
+    let now = unix_ms();
+    let last = LAST_RESTORE_MS.load(Ordering::SeqCst);
+    if now.saturating_sub(last) < 400 {
+        return;
+    }
+    if RESTORING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    LAST_RESTORE_MS.store(now, Ordering::SeqCst);
+    let app = window.app_handle().clone();
+    let queued = app.clone().run_on_main_thread(move || {
+        // Reveal even if Windows already cleared the iconic flag. The parent
+        // can be visible again while the WebView2 controller is still hidden.
+        logfile::write("taskbar minimize -> restore notch");
+        reveal_island(&app, false);
+        RESTORING.store(false, Ordering::SeqCst);
+    });
+    if queued.is_err() {
+        RESTORING.store(false, Ordering::SeqCst);
+    }
+}
 
 fn request_quit(app: &AppHandle) {
     request_exit(app, 0);

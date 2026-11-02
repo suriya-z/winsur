@@ -1113,6 +1113,20 @@ impl SessionManager {
             .cloned()
     }
 
+    /// cwd, name, agent type, and the discovery pid for jump/paste targeting.
+    /// `live_pid` is not serialized to the UI; jump must read it here so two
+    /// sessions of the same product do not share the first process in the list.
+    pub fn focus_fields(&self, id: &str) -> Option<(String, String, String, Option<u32>)> {
+        let inner = self.inner.lock().expect("sessions");
+        let session = inner.sessions.get(id)?;
+        Some((
+            session.cwd.clone(),
+            session.name.clone(),
+            session.agent_type.clone(),
+            session.live_pid,
+        ))
+    }
+
     pub fn get_sessions(&self) -> Vec<Session> {
         let inner = self.inner.lock().expect("sessions");
         let mut by_key: IndexMap<String, Session> = IndexMap::new();

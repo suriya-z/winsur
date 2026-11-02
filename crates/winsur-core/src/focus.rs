@@ -1,7 +1,7 @@
 //! Score top-level windows the same way the Electron jump script did.
 
 use crate::discover::ProcessInfo;
-use crate::registry::{registry, terminal_hints};
+use crate::registry::registry;
 use std::collections::HashSet;
 
 #[derive(Clone, Debug)]
@@ -39,6 +39,23 @@ pub fn jump_chrome() -> JumpChrome {
     }
 }
 
+/// Taskbar activation must not leave the island minimized. A transparent
+/// WebView2 window that minimizes on a taskbar click stays blank: the parent
+/// HWND comes back, the controller does not. Refuse minimize, and if Windows
+/// minimizes anyway, restore on the next poll.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TaskbarChrome {
+    pub allow_minimize: bool,
+    pub restore_if_minimized: bool,
+}
+
+pub fn taskbar_chrome() -> TaskbarChrome {
+    TaskbarChrome {
+        allow_minimize: false,
+        restore_if_minimized: true,
+    }
+}
+
 pub fn prefer_name(agent_type: &str) -> &'static str {
     match agent_type {
         "grok-build" => "grok",
@@ -46,34 +63,71 @@ pub fn prefer_name(agent_type: &str) -> &'static str {
         "codex" => "codex",
         "cursor" => "cursor",
         "hermes" => "hermes",
-        _ => "grok",
+        "windsurf" => "windsurf",
+        "gemini" => "gemini",
+        "qwen-code" => "qwen",
+        "opencode" => "opencode",
+        "kiro" => "kiro",
+        "trae" => "trae",
+        "code-buddy" => "codebuddy",
+        "antigravity" => "antigravity",
+        "droid" => "droid",
+        "kimi" => "kimi",
+        "deepseek" => "deepseek",
+        "amp" => "amp",
+        "mistral" => "mistral",
+        "zcode" => "zcode",
+        "qoder" => "qoder",
+        "mimocode" => "mimo",
+        "workbuddy" => "workbuddy",
+        "gajae" => "gajae",
+        "copilot" => "copilot",
+        _ => "",
     }
 }
 
+/// Words that identify a different product in a window title.
+/// "code" is intentionally absent: it matches folder names and "VS Code".
+const AGENT_WORDS: &[&str] = &[
+    "grok",
+    "claude",
+    "codex",
+    "cursor",
+    "hermes",
+    "windsurf",
+    "gemini",
+    "opencode",
+    "antigravity",
+    "qwen",
+    "kiro",
+    "trae",
+    "deepseek",
+    "kimi",
+    "mistral",
+    "copilot",
+    "zcode",
+    "qoder",
+    "gajae",
+    "droid",
+];
+
 pub fn agent_keywords(agent_type: &str) -> Vec<String> {
+    // Host names (Terminal, Cursor, VS Code, Code) used to be needles for every
+    // agent. A Cursor or VS Code title then outscored the terminal that was
+    // actually running the session. Host bonuses live in the process-name
+    // score; title needles are this product's own window hints.
     if let Some(reg) = registry().into_iter().find(|a| a.type_id == agent_type) {
-        let mut hints: Vec<String> = reg.window_hints.iter().map(|s| (*s).to_string()).collect();
-        hints.extend(terminal_hints().iter().map(|s| (*s).to_string()));
+        let hints: Vec<String> = reg.window_hints.iter().map(|s| (*s).to_string()).collect();
         if !hints.is_empty() {
             return hints;
         }
     }
-    [
-        "Windows Terminal",
-        "Terminal",
-        "cmd",
-        "powershell",
-        "pwsh",
-        "WezTerm",
-        "VS Code",
-        "Cursor",
-        "grok",
-        "claude",
-        "codex",
-    ]
-    .into_iter()
-    .map(|s| s.to_string())
-    .collect()
+    let prefer = prefer_name(agent_type);
+    if prefer.is_empty() {
+        Vec::new()
+    } else {
+        vec![prefer.to_string()]
+    }
 }
 
 pub fn build_needles(cwd: &str, name: &str, agent_type: &str) -> Vec<String> {
@@ -136,23 +190,54 @@ pub fn ancestor_pids(processes: &[ProcessInfo], pid: u32) -> HashSet<u32> {
     set
 }
 
-pub fn find_agent_pid(processes: &[ProcessInfo], prefer: &str) -> u32 {
-    if prefer.is_empty() {
-        return 0;
+pub fn find_agent_pid(
+    processes: &[ProcessInfo],
+    agent_type: &str,
+    prefer: &str,
+    cwd: &str,
+    live_pid: Option<u32>,
+) -> u32 {
+    if let Some(pid) = live_pid {
+        if pid != 0 && processes.iter().any(|proc| proc.pid == pid) {
+            return pid;
+        }
     }
-    let p = prefer.to_lowercase();
-    if let Some(hit) = processes.iter().find(|x| {
-        let n = x.name.to_lowercase();
-        let n = n.strip_suffix(".exe").unwrap_or(&n);
-        n == p
-    }) {
-        return hit.pid;
-    }
-    processes
+    let pool: Vec<&ProcessInfo> = processes
         .iter()
-        .find(|x| x.name.to_lowercase().contains(&p))
-        .map(|x| x.pid)
-        .unwrap_or(0)
+        .filter(|proc| match crate::discover::classify_process(proc) {
+            Some(kind) => kind == agent_type,
+            None => name_matches(&proc.name, prefer),
+        })
+        .collect();
+    let cwd_key = norm_path_key(cwd);
+    if !cwd_key.is_empty() {
+        if let Some(hit) = pool.iter().find(|proc| {
+            norm_path_key(&proc.command_line).contains(&cwd_key)
+                || norm_path_key(&proc.executable_path).contains(&cwd_key)
+        }) {
+            return hit.pid;
+        }
+    }
+    // One live process of this product is unambiguous. Two or more, with no
+    // cwd in the command line, must not donate +400 to whichever happened to
+    // be enumerated first — that is what focused the wrong app.
+    if pool.len() == 1 {
+        return pool[0].pid;
+    }
+    0
+}
+
+fn name_matches(name: &str, prefer: &str) -> bool {
+    if prefer.is_empty() {
+        return false;
+    }
+    let n = name.to_lowercase();
+    let n = n.strip_suffix(".exe").unwrap_or(&n);
+    n == prefer || n.contains(prefer)
+}
+
+fn norm_path_key(value: &str) -> String {
+    value.replace('/', "\\").trim_matches('\\').to_lowercase()
 }
 
 fn is_host(proc_name: &str, class_name: &str) -> bool {
@@ -185,16 +270,61 @@ fn title_agent(title: &str) -> bool {
     .any(|n| tl.contains(n))
 }
 
+fn has_word(hay: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
+    let hay = hay.to_lowercase();
+    let needle = needle.to_lowercase();
+    hay.match_indices(&needle).any(|(index, _)| {
+        let before_ok = index == 0 || !hay.as_bytes()[index - 1].is_ascii_alphanumeric();
+        let after = index + needle.len();
+        let after_ok = after >= hay.len() || !hay.as_bytes()[after].is_ascii_alphanumeric();
+        before_ok && after_ok
+    })
+}
+
+fn foreign_title(title: &str, prefer: &str, folder: &str, session_name: &str) -> bool {
+    let folder = folder.to_lowercase();
+    let session_name = session_name.to_lowercase();
+    AGENT_WORDS.iter().any(|token| {
+        if *token == prefer {
+            return false;
+        }
+        // A project literally named "claude-utils" is not the Claude app.
+        if folder.contains(token) || session_name.contains(token) {
+            return false;
+        }
+        has_word(title, token)
+    })
+}
+
+fn unrelated_editor(proc_name: &str, prefer: &str) -> bool {
+    let pn = proc_name.to_lowercase();
+    let pn = pn.strip_suffix(".exe").unwrap_or(&pn);
+    let editor = matches!(
+        pn,
+        "code" | "cursor" | "windsurf" | "devenv" | "antigravity" | "trae"
+    ) || pn.contains("windsurf");
+    if !editor {
+        return false;
+    }
+    prefer.is_empty() || !pn.contains(prefer)
+}
+
 fn score_one(
     win: &TopWindow,
     needles: &[String],
     prefer: &str,
     agent_tree: &HashSet<u32>,
+    folder: &str,
+    session_name: &str,
     base: i32,
 ) -> i32 {
     let tl = win.title.to_lowercase();
     let pn = win.proc_name.to_lowercase();
     let cls = win.class_name.to_lowercase();
+    let owned = agent_tree.contains(&win.pid);
     let mut score = base;
     for n in needles {
         if n.is_empty() {
@@ -203,6 +333,9 @@ fn score_one(
         if tl.contains(&n.to_lowercase()) {
             score += 10 + (n.len() as i32).min(20);
         }
+    }
+    if folder.len() >= 4 && tl.contains(&folder.to_lowercase()) {
+        score += 260;
     }
     if pn.contains("windowsterminal") {
         score += 30;
@@ -213,31 +346,22 @@ fn score_one(
     if matches!(pn.as_str(), "cmd" | "powershell" | "pwsh") {
         score += 12;
     }
-    if matches!(pn.as_str(), "code" | "cursor") {
-        score += 8;
-    }
-    if tl.contains("grok") {
-        score += 130;
-    }
-    if tl.contains("claude") {
-        score += 90;
-    }
-    if tl.contains("codex") {
-        score += 90;
-    }
-    if tl.contains("hermes") && prefer == "grok" {
-        score -= 150;
-    }
     if tl.contains("rainmeter") || tl.contains("player.ini") {
         score -= 250;
     }
-    if !prefer.is_empty() && tl.contains(prefer) {
-        score += 200;
+    if !prefer.is_empty() && has_word(&win.title, prefer) {
+        score += 180;
     }
     if !prefer.is_empty() && pn.contains(prefer) {
         score += 80;
     }
-    if agent_tree.contains(&win.pid) {
+    if foreign_title(&win.title, prefer, folder, session_name) && !owned {
+        score -= 320;
+    }
+    if unrelated_editor(&win.proc_name, prefer) && !owned {
+        score -= 200;
+    }
+    if owned {
         score += 400;
     }
     score
@@ -248,6 +372,8 @@ pub fn pick_window(
     needles: &[String],
     prefer: &str,
     agent_tree: &HashSet<u32>,
+    folder: &str,
+    session_name: &str,
 ) -> Option<ScoredWindow> {
     let mut scored = Vec::new();
     for w in windows {
@@ -260,7 +386,7 @@ pub fn pick_window(
         {
             continue;
         }
-        let score = score_one(w, needles, prefer, agent_tree, 0);
+        let score = score_one(w, needles, prefer, agent_tree, folder, session_name, 0);
         if score > 0 {
             scored.push(ScoredWindow {
                 score,
@@ -270,14 +396,15 @@ pub fn pick_window(
     }
     if scored.is_empty() {
         for w in windows {
-            if is_host(&w.proc_name, &w.class_name) {
-                let mut score = 5;
-                if !prefer.is_empty() && w.title.to_lowercase().contains(prefer) {
-                    score = 250;
-                }
-                if agent_tree.contains(&w.pid) {
-                    score += 400;
-                }
+            if !is_host(&w.proc_name, &w.class_name) {
+                continue;
+            }
+            if foreign_title(&w.title, prefer, folder, session_name) && !agent_tree.contains(&w.pid)
+            {
+                continue;
+            }
+            let score = score_one(w, needles, prefer, agent_tree, folder, session_name, 5);
+            if score > 0 {
                 scored.push(ScoredWindow {
                     score,
                     window: w.clone(),
@@ -286,6 +413,13 @@ pub fn pick_window(
         }
     }
     scored.into_iter().max_by_key(|s| s.score)
+}
+
+pub fn folder_label(cwd: &str) -> String {
+    cwd.split(['/', '\\'])
+        .rfind(|part| !part.is_empty())
+        .unwrap_or("")
+        .to_string()
 }
 
 pub fn agent_process_alive(processes: &[ProcessInfo]) -> bool {
@@ -307,6 +441,13 @@ mod jump_chrome_tests {
         assert!(chrome.keep_taskbar);
         assert!(chrome.always_on_top);
         assert!(!chrome.steal_focus);
+    }
+
+    #[test]
+    fn taskbar_click_must_not_leave_the_notch_minimized() {
+        let chrome = taskbar_chrome();
+        assert!(!chrome.allow_minimize);
+        assert!(chrome.restore_if_minimized);
     }
 }
 
@@ -345,6 +486,8 @@ mod tests {
             &build_needles(r"C:\work\app", "app", "grok-build"),
             "grok",
             &HashSet::new(),
+            "app",
+            "app",
         )
         .unwrap();
         assert!(picked.window.title.contains("grok"));
@@ -369,7 +512,137 @@ mod tests {
         ];
         let mut tree = HashSet::new();
         tree.insert(3);
-        let picked = pick_window(&windows, &["grok".into()], "grok", &tree).unwrap();
+        let picked = pick_window(&windows, &["grok".into()], "grok", &tree, "", "").unwrap();
         assert_eq!(picked.window.pid, 3);
+    }
+
+    #[test]
+    fn unknown_agents_do_not_prefer_grok() {
+        assert_eq!(prefer_name("windsurf"), "windsurf");
+        assert_eq!(prefer_name("gemini"), "gemini");
+        assert_eq!(prefer_name("unknown"), "");
+    }
+
+    #[test]
+    fn claude_needles_do_not_include_every_editor() {
+        let needles = build_needles(r"C:\work\payments", "payments", "claude-code");
+        assert!(needles.iter().any(|n| n.eq_ignore_ascii_case("claude")));
+        assert!(needles.iter().any(|n| n == "payments"));
+        assert!(!needles.iter().any(|n| n.eq_ignore_ascii_case("cursor")));
+        assert!(!needles.iter().any(|n| n.eq_ignore_ascii_case("code")));
+        assert!(!needles.iter().any(|n| n.eq_ignore_ascii_case("vs code")));
+    }
+
+    #[test]
+    fn jumping_to_claude_does_not_open_grok_or_cursor() {
+        let windows = vec![
+            win(
+                "grok — other",
+                "WindowsTerminal",
+                "CASCADIA_HOSTING_WINDOW_CLASS",
+                4,
+            ),
+            win("payments - Cursor", "Cursor", "Chrome_WidgetWin_1", 8),
+            win(
+                "payments",
+                "WindowsTerminal",
+                "CASCADIA_HOSTING_WINDOW_CLASS",
+                5,
+            ),
+        ];
+        let picked = pick_window(
+            &windows,
+            &build_needles(r"C:\work\payments", "payments", "claude-code"),
+            "claude",
+            &HashSet::new(),
+            "payments",
+            "payments",
+        )
+        .unwrap();
+        assert_eq!(picked.window.pid, 5, "score {}", picked.score);
+    }
+
+    #[test]
+    fn the_editor_that_owns_the_agent_still_wins() {
+        let windows = vec![
+            win("payments - Cursor", "Cursor", "Chrome_WidgetWin_1", 8),
+            win(
+                "other",
+                "WindowsTerminal",
+                "CASCADIA_HOSTING_WINDOW_CLASS",
+                3,
+            ),
+        ];
+        let mut tree = HashSet::new();
+        tree.insert(8);
+        let picked = pick_window(
+            &windows,
+            &build_needles(r"C:\work\payments", "payments", "claude-code"),
+            "claude",
+            &tree,
+            "payments",
+            "payments",
+        )
+        .unwrap();
+        assert_eq!(picked.window.pid, 8);
+    }
+
+    fn proc(pid: u32, name: &str, command_line: &str) -> ProcessInfo {
+        ProcessInfo {
+            pid,
+            parent_pid: 0,
+            name: name.into(),
+            command_line: command_line.into(),
+            executable_path: String::new(),
+        }
+    }
+
+    #[test]
+    fn cwd_picks_the_session_process_and_two_unnamed_processes_do_not() {
+        let processes = vec![
+            proc(1, "claude.exe", ""),
+            proc(2, "claude.exe", r"C:\work\payments"),
+        ];
+        assert_eq!(
+            find_agent_pid(
+                &processes,
+                "claude-code",
+                "claude",
+                r"C:\work\payments",
+                None
+            ),
+            2
+        );
+        let ambiguous = vec![proc(1, "claude.exe", ""), proc(2, "claude.exe", "")];
+        assert_eq!(
+            find_agent_pid(
+                &ambiguous,
+                "claude-code",
+                "claude",
+                r"C:\work\payments",
+                None
+            ),
+            0
+        );
+        assert_eq!(
+            find_agent_pid(
+                &ambiguous,
+                "claude-code",
+                "claude",
+                r"C:\work\payments",
+                Some(2)
+            ),
+            2
+        );
+        assert_eq!(
+            find_agent_pid(
+                &[proc(7, "claude.exe", "")],
+                "claude-code",
+                "claude",
+                r"C:\work\payments",
+                None
+            ),
+            7
+        );
     }
 }

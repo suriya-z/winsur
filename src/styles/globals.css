@@ -40,12 +40,14 @@
   --accent-orange: #fb923c;
   --accent-cyan: #67e8f9;
 
-  /* Status */
-  --status-idle: #3f3f46;
-  --status-thinking: #94a3b8;
+  /* Status — chromatic on the near-black pill. Idle was #3f3f46 and
+     thinking was slate, so every collapsed dot read as grey. */
+  --status-idle: #4ade80;
+  --status-thinking: #60a5fa;
   --status-waiting: #fbbf24;
   --status-error: #f87171;
   --status-success: #4ade80;
+  --status-offline: #52525b;
 
   --shadow-island:
     0 0 0 1px rgba(255, 255, 255, 0.06),
@@ -133,8 +135,8 @@ input::placeholder {
 /* ====== Status animations ====== */
 
 @keyframes pulse-thinking {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(148, 163, 184, 0.35); }
-  50% { opacity: 0.55; box-shadow: 0 0 0 4px rgba(148, 163, 184, 0); }
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.45); }
+  50% { opacity: 0.55; box-shadow: 0 0 0 4px rgba(96, 165, 250, 0); }
 }
 
 @keyframes breathe-waiting {

@@ -58,13 +58,16 @@ async fn restore_island(app: &AppHandle, _state: &AppState, focus: bool) {
     crate::reveal_island(app, focus);
 }
 
-fn session_fields(state: &AppState, session_id: &str) -> Option<(String, String, String, String)> {
+fn session_fields(
+    state: &AppState,
+    session_id: &str,
+) -> Option<(String, String, String, String, Option<u32>)> {
     state
         .sessions
-        .get_sessions()
-        .into_iter()
-        .find(|session| session.id == session_id)
-        .map(|session| (session.id, session.cwd, session.name, session.agent_type))
+        .focus_fields(session_id)
+        .map(|(cwd, name, agent_type, live_pid)| {
+            (session_id.to_string(), cwd, name, agent_type, live_pid)
+        })
 }
 
 fn jump_message(detail: &str) -> String {
@@ -126,7 +129,7 @@ pub async fn focus_terminal(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<Value, String> {
-    let Some((_, cwd, name, agent_type)) = session_fields(&state, &session_id) else {
+    let Some((_, cwd, name, agent_type, live_pid)) = session_fields(&state, &session_id) else {
         return Ok(json!({ "ok": false, "detail": "session not found" }));
     };
     // Jump must not hide the window. release_island drops the taskbar button,
@@ -137,7 +140,7 @@ pub async fn focus_terminal(
         release_island(&app, &state).await;
     }
     let result = tauri::async_runtime::spawn_blocking(move || {
-        win32::focus_terminal(&cwd, &name, &agent_type)
+        win32::focus_terminal(&cwd, &name, &agent_type, live_pid)
     })
     .await
     .map_err(|err| err.to_string())?;
@@ -248,7 +251,7 @@ pub async fn respond_plan(
     decision: String,
     message: Option<String>,
 ) -> Result<Value, String> {
-    let Some((id, cwd, name, agent_type)) = session_fields(&state, &session_id) else {
+    let Some((id, cwd, name, agent_type, live_pid)) = session_fields(&state, &session_id) else {
         return Ok(json!({ "ok": false, "detail": "session not found" }));
     };
     let text = match decision.as_str() {
@@ -272,7 +275,7 @@ pub async fn respond_plan(
     };
     release_island(&app, &state).await;
     let result = tauri::async_runtime::spawn_blocking(move || {
-        win32::send_text(&cwd, &name, &agent_type, &text)
+        win32::send_text(&cwd, &name, &agent_type, &text, live_pid)
     })
     .await
     .map_err(|err| err.to_string())?;
@@ -334,7 +337,7 @@ pub async fn reply_question(
     session_id: String,
     message: String,
 ) -> Result<Value, String> {
-    let Some((id, cwd, name, agent_type)) = session_fields(&state, &session_id) else {
+    let Some((id, cwd, name, agent_type, live_pid)) = session_fields(&state, &session_id) else {
         return Ok(
             json!({ "ok": false, "detail": "no active agent session", "background": false }),
         );
@@ -345,7 +348,7 @@ pub async fn reply_question(
     }
     release_island(&app, &state).await;
     let result = tauri::async_runtime::spawn_blocking(move || {
-        win32::send_text(&cwd, &name, &agent_type, &message)
+        win32::send_text(&cwd, &name, &agent_type, &message, live_pid)
     })
     .await
     .map_err(|err| err.to_string())?;

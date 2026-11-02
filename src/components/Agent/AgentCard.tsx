@@ -12,7 +12,7 @@ import type { AgentSession } from "../../types/agent";
 
 const STATUS_INFO: Record<string, { text: string; color: string }> = {
   idle: { text: "Done — click to jump", color: "var(--accent-green)" },
-  thinking: { text: "Working", color: "var(--accent-blue)" },
+  thinking: { text: "Working", color: "var(--status-thinking)" },
   waiting: { text: "Action required", color: "var(--accent-yellow)" },
   error: { text: "Error", color: "var(--accent-red)" },
   disconnected: { text: "Offline", color: "var(--text-muted)" },

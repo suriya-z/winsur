@@ -228,6 +228,13 @@ impl Overlay {
     }
 
     pub fn sync_pointer(&self, window: &WebviewWindow, force: bool) {
+        // Check minimize before the visibility early-return. A minimized
+        // window can still report WS_VISIBLE, and a hidden one must not be
+        // forced back on screen (tray Show/Hide and close-to-tray).
+        if window.is_minimized().unwrap_or(false) {
+            crate::restore_minimized_notch(window);
+            return;
+        }
         if window.is_visible().ok() != Some(true) {
             return;
         }
