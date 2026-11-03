@@ -12,7 +12,7 @@ use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
-use winsur_core::agent::{DiscoverInfo, SessionManager};
+use winsur_core::agent::{parse_time_ms, DiscoverInfo, FileActivity, SessionManager};
 use winsur_core::discover::{collect_artifacts, plan_discoveries};
 use winsur_core::focus::taskbar_chrome;
 use winsur_core::hooks::{auto_install_on_launch, resolve_hook_script};
@@ -276,7 +276,13 @@ fn sync_running(sessions: &SessionManager, app: &AppHandle) {
         .unwrap_or(0);
     let plan = plan_discoveries(&processes, &artifacts, now);
     let mut changed = false;
+    let mut files = Vec::new();
     for planned in &plan.sessions {
+        files.push(FileActivity {
+            agent_type: planned.agent_type.clone(),
+            cwd: planned.cwd.clone(),
+            observed_ms: parse_time_ms(&planned.last_event_at),
+        });
         let info = DiscoverInfo {
             id: planned.id.clone(),
             agent_type: planned.agent_type.clone(),
@@ -286,14 +292,22 @@ fn sync_running(sessions: &SessionManager, app: &AppHandle) {
             status: planned.status.clone(),
             last_event_at: planned.last_event_at.clone(),
         };
-        if sessions.note_discovered(&info).created {
+        let noted = sessions.note_discovered(&info);
+        if noted.created || noted.updated {
             changed = true;
         }
     }
     let pids: HashSet<u32> = plan.pids.into_iter().collect();
     let types: HashSet<String> = plan.types.into_iter().collect();
+    let downgrades = sessions.settle_working(now, Some(&pids), &files);
+    for downgrade in &downgrades {
+        logfile::write(&format!(
+            "status downgrade id={} type={} name={} reason={}",
+            downgrade.id, downgrade.agent_type, downgrade.name, downgrade.reason
+        ));
+    }
     let removed = sessions.reap(Some(&pids), Some(&types), now);
-    if changed || !removed.is_empty() {
+    if changed || !removed.is_empty() || !downgrades.is_empty() {
         if let Some(window) = app.get_webview_window("main") {
             let _ = window.emit("agents-sync", sessions.get_sessions());
         }

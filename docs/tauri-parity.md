@@ -44,7 +44,7 @@ Nothing in this file may be left unchecked. CI fails if a line still starts with
 - [x] `PostToolUse` clears a permission for that tool (or a generic "Permission" card) and does not clear a card for a different tool (`crates/winsur-core/src/agent.rs`).
 - [x] `SessionEnd` returns the session as disconnected and deletes it so the UI cannot merge it back (`crates/winsur-core/src/agent.rs`).
 - [x] Dismiss and Clear stay dismissed until a real hook event for that card. `clearAll` on startup does not wipe the dismissed set (`crates/winsur-core/src/agent.rs`).
-- [x] Auto-idle after 6s of quiet "thinking", cancelled while a tool, permission, question, or plan is active (`crates/winsur-core/src/agent.rs`).
+- [x] Auto-idle after 6s of quiet "thinking", cancelled while a tool, permission, question, or plan is active. A scan observation at or before the last status transition cannot put the card back on working. If the session pid is gone, working drops to idle immediately. With no hook event and no transcript/file mtime for 90s, working drops to idle and the reason is appended to `%APPDATA%\Winsur\winsur.log` (`crates/winsur-core/src/agent.rs`, `src-tauri/src/lib.rs`).
 - [x] Permission waiters: a new wait denies the previous one; timeout denies; removing a session denies (`crates/winsur-core/src/agent.rs`).
 - [x] Reply updates the real session (status thinking, last tool "reply sent"). The Electron handler mutated the public copy, so that status never stuck (`src-tauri/src/commands.rs`).
 
@@ -53,8 +53,8 @@ Nothing in this file may be left unchecked. CI fails if a line still starts with
 - [x] Process classification skips helpers (`--type=`, crashpad, helper, gpu, utility). `Cursor.exe` is Cursor; `claude.exe` under `Programs\Claude` or `AnthropicClaude` is the desktop app; otherwise it is Claude Code. `node.exe` only counts when the command line is Claude Code, Codex, Gemini CLI, or Qwen (`crates/winsur-core/src/discover.rs`).
 - [x] Process list and command lines come from Toolhelp + the PEB, not PowerShell. A failed snapshot returns null and does not reap (`src-tauri/src/win32.rs`, `crates/winsur-core/src/discover.rs`).
 - [x] Session files: Claude `~/.claude/projects`, Codex `~/.codex/sessions` (depth 4), Grok `~/.grok` (depth 3), Gemini, Hermes, Cursor and Windsurf `workspaceStorage` (`crates/winsur-core/src/discover.rs`).
-- [x] Only types with a live process are shown. Artifacts touched within 12h (otherwise the single newest), cap 4 per type. mtime under 2 minutes is "thinking", else "idle" (`crates/winsur-core/src/discover.rs`).
-- [x] Reap removes a card whose type is gone, immediately for discovered-only cards, after 60s if it is waiting and the pid is dead, and after 3 minutes for a quiet hooked session. A null scan removes nothing (`crates/winsur-core/src/agent.rs`).
+- [x] Only types with a live process are shown. Artifacts touched within 12h (otherwise the single newest), cap 4 per type. mtime under 2 minutes suggests "thinking", else "idle". That suggestion is applied only when it is newer than the card's last status transition, so a stale transcript cannot overwrite a Stop/idle hook (`crates/winsur-core/src/discover.rs`, `crates/winsur-core/src/agent.rs`).
+- [x] Reap removes a card whose type is gone, immediately for discovered-only cards, after 60s if it is waiting and the pid is dead, and after 3 minutes for a quiet hooked session. A dead pid clears working even when another process of that product is still alive. A null scan removes nothing (`crates/winsur-core/src/agent.rs`).
 
 ## Hook installer
 
@@ -84,7 +84,7 @@ Nothing in this file may be left unchecked. CI fails if a line still starts with
 
 - [x] `src/lib/bridge.ts` keeps the same exported functions. They call Tauri commands and events (`get_agents`, `agent-update`, `agents-sync`, `agents-cleared`, drag, metrics) instead of Electron preload (`src/lib/bridge.ts`, `src-tauri/src/commands.rs`).
 - [x] `window.winsur` and `window.vibeIsland` are still installed for callers that touch the global (`src/lib/bridge.ts`).
-- [x] Island width, keyboard shortcuts, agent icons, and the stores are unchanged (`src/components/`, `src/hooks/useKeyboardShortcuts.ts`, `src/stores/agentStore.ts`).
+- [x] The collapsed notch is a fixed 248px pill: one fleet dot (error, then waiting, then working, then idle), a single label such as "2 waiting" or "2 agents", and the chevron. It does not render a dot per agent and does not grow with the agent count. Keyboard shortcuts, agent icons, and the stores stay (`src/components/Island/notchSummary.ts`, `src/components/Island/CollapsedView.tsx`, `src/hooks/useKeyboardShortcuts.ts`, `src/stores/agentStore.ts`).
 
 ## Packaging
 

@@ -10,6 +10,7 @@ import { bindClickOrDrag, reportIslandMetrics, stopWindowDragging } from "../../
 import { useAgentStore } from "../../stores/agentStore";
 import { CollapsedView } from "./CollapsedView";
 import { ExpandedView } from "./ExpandedView";
+import { COLLAPSED_NOTCH_WIDTH } from "./notchSummary";
 
 const SPRING_OPEN = { type: "spring" as const, stiffness: 224, damping: 24, mass: 1 };
 const SPRING_CLOSE = { type: "tween" as const, duration: 0.28, ease: [0.25, 0.1, 0.25, 1] as [number, number, number, number] };
@@ -27,7 +28,6 @@ export function IslandContainer() {
   const notify = useAgentStore((s) => s.notify);
   const clearNotify = useAgentStore((s) => s.clearNotify);
   const toggleExpanded = useAgentStore((s) => s.toggleExpanded);
-  const agents = useAgentStore((s) => s.agents);
   const islandRef = useRef<HTMLDivElement>(null);
 
   // The main process hit-tests the cursor against this rectangle. Measuring
@@ -91,7 +91,7 @@ export function IslandContainer() {
     }
   }, [notify, isExpanded, clearNotify]);
 
-  const collapsedWidth = Math.max(220, Math.min(360, 180 + agents.length * 28));
+  const collapsedWidth = COLLAPSED_NOTCH_WIDTH;
 
   const collapsedClass = () => {
     if (isExpanded) return "";

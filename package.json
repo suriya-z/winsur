@@ -18,6 +18,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test:unit": "node --experimental-strip-types --test src/components/Island/notchSummary.test.ts src/stores/agentMerge.test.ts",
     "preview": "vite preview",
     "icon": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make-icon.ps1",
     "tauri": "tauri",

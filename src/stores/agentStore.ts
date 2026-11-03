@@ -5,6 +5,7 @@
 
 import { create } from "zustand";
 import type { AgentSession } from "../types/agent";
+import { preferSession } from "./agentMerge";
 
 /** 通知类型 */
 export type NotifyType = "permission" | "done" | "question" | "plan" | null;
@@ -86,8 +87,9 @@ export const useAgentStore = create<AgentStore>((set) => ({
       let newAgents: AgentSession[];
       if (existing >= 0) {
         newAgents = [...state.agents];
+        const kept = preferSession(oldAgent, agent);
         // Keep stable id for UI keys when merging
-        newAgents[existing] = { ...agent, id: newAgents[existing].id };
+        newAgents[existing] = { ...kept, id: newAgents[existing].id };
       } else {
         newAgents = [...state.agents, agent];
       }
@@ -147,7 +149,27 @@ export const useAgentStore = create<AgentStore>((set) => ({
 
   setAgents: (agents) =>
     set((state) => {
-      const next = agents.filter((a) => a.status !== "disconnected");
+      const next = agents
+        .filter((a) => a.status !== "disconnected")
+        .map((agent) => {
+          const current =
+            state.agents.find(
+              (old) =>
+                old.id === agent.id ||
+                (old.agent_type === agent.agent_type &&
+                  String(old.cwd || "")
+                    .replace(/\//g, "\\")
+                    .replace(/\\+$/, "")
+                    .toLowerCase() ===
+                    String(agent.cwd || "")
+                      .replace(/\//g, "\\")
+                      .replace(/\\+$/, "")
+                      .toLowerCase() &&
+                  (old.remote_host || "") === (agent.remote_host || "")),
+            ) ?? null;
+          const kept = preferSession(current, agent);
+          return current ? { ...kept, id: current.id } : kept;
+        });
       const { hasPerm, hasAny, count } = checkPending(next);
       const shouldExpand = hasAny;
       const shouldCollapse = state.hasAnyPending && !hasAny;

@@ -14,6 +14,25 @@ use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
 const IDLE_AFTER: Duration = Duration::from_millis(6000);
+/// Discovery-only cards and missed Stop hooks have no 6s timer. 90s of no
+/// hook event and no transcript/file mtime is long enough for a quiet tool
+/// gap, and short enough that a finished turn does not sit on "working"
+/// through the 2-minute discovery window. CPU is not sampled; hook time and
+/// file mtime are the activity signals the process list actually gives us.
+pub const WORKING_STALE_MS: i64 = 90_000;
+
+pub struct WorkingDowngrade {
+    pub id: String,
+    pub name: String,
+    pub agent_type: String,
+    pub reason: String,
+}
+
+pub struct FileActivity {
+    pub agent_type: String,
+    pub cwd: String,
+    pub observed_ms: i64,
+}
 
 fn now_iso() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
@@ -23,6 +42,52 @@ fn parse_millis(iso: &str) -> Option<i64> {
     DateTime::parse_from_rfc3339(iso)
         .ok()
         .map(|d| d.timestamp_millis())
+}
+
+pub fn parse_time_ms(iso: &str) -> i64 {
+    parse_millis(iso).unwrap_or(0)
+}
+
+fn apply_hook_status(session: &mut Session, status: &str, event_ms: i64) {
+    if session.status != status {
+        session.status_seq = session.status_seq.saturating_add(1);
+        session.status = status.to_string();
+    } else if session.status_seq == 0 {
+        session.status_seq = 1;
+    }
+    if event_ms > session.status_at_ms {
+        session.status_at_ms = event_ms;
+    }
+}
+
+/// Apply a process-scan observation. Returns whether `status` changed.
+/// An observation at or before the last hook/scan transition is ignored, so a
+/// stale "thinking" mtime cannot revive a session a Stop hook already idled.
+fn apply_scan_status(session: &mut Session, status: &str, observed_ms: i64) -> bool {
+    if status.is_empty() {
+        return false;
+    }
+    let blocked = session.status == "waiting"
+        || session.pending_permission.is_some()
+        || session.pending_question.is_some()
+        || session.pending_plan.is_some();
+    if blocked {
+        return false;
+    }
+    if session.status_seq > 0 && observed_ms <= session.status_at_ms {
+        return false;
+    }
+    let changed = session.status != status;
+    if changed {
+        session.status_seq = session.status_seq.saturating_add(1);
+        session.status = status.to_string();
+    } else if session.status_seq == 0 {
+        session.status_seq = 1;
+    }
+    if observed_ms > session.status_at_ms {
+        session.status_at_ms = observed_ms;
+    }
+    changed
 }
 
 pub fn norm_cwd(cwd: &str) -> String {
@@ -470,6 +535,13 @@ pub struct Session {
     discovered: bool,
     #[serde(skip)]
     live_pid: Option<u32>,
+    /// Millis of the last status transition. A scan observation older than
+    /// this must not change `status`.
+    #[serde(skip)]
+    status_at_ms: i64,
+    /// Bumps on every status change. Zero means no observation has landed yet.
+    #[serde(skip)]
+    status_seq: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -487,6 +559,7 @@ pub struct DiscoverInfo {
 pub struct NoteResult {
     pub created: bool,
     pub skipped: bool,
+    pub updated: bool,
     pub session: Option<Session>,
 }
 
@@ -589,7 +662,8 @@ impl SessionManager {
                 && s.pending_question.is_none()
                 && s.pending_plan.is_none()
             {
-                s.status = "idle".into();
+                let now_ms = Utc::now().timestamp_millis();
+                apply_hook_status(s, "idle", now_ms);
                 s.last_tool = None;
                 s.last_event_at = now_iso();
                 s.clone()
@@ -703,6 +777,8 @@ impl SessionManager {
             hooked: false,
             discovered: false,
             live_pid: None,
+            status_at_ms: 0,
+            status_seq: 0,
         };
         Self::reindex(inner, &session);
         inner.sessions.insert(id.clone(), session);
@@ -716,6 +792,7 @@ impl SessionManager {
             return NoteResult {
                 created: false,
                 skipped: true,
+                updated: false,
                 session: None,
             };
         }
@@ -733,17 +810,11 @@ impl SessionManager {
         let created = !existed;
         if let Some(session) = inner.sessions.get_mut(&id) {
             if created && !session.hooked {
-                session.status = if info.status.is_empty() {
-                    "idle".into()
-                } else {
-                    info.status.clone()
-                };
                 if !info.name.is_empty() {
                     session.name = info.name.clone();
                 }
                 session.cwd = info.cwd.clone();
                 if !info.last_event_at.is_empty() {
-                    session.last_event_at = info.last_event_at.clone();
                     session.started_at = info.last_event_at.clone();
                 }
             } else if norm_cwd(&session.cwd).is_empty() && !norm_cwd(&info.cwd).is_empty() {
@@ -751,6 +822,14 @@ impl SessionManager {
                 if !info.name.is_empty() {
                     session.name = info.name.clone();
                 }
+            }
+            let observed_ms = parse_millis(&info.last_event_at).unwrap_or(0);
+            let updated = apply_scan_status(session, &info.status, observed_ms);
+            if !session.hooked && updated && !info.last_event_at.is_empty() {
+                // get_or_create stamped "now". The file mtime is the observation.
+                session.last_event_at = info.last_event_at.clone();
+            } else if observed_ms > parse_millis(&session.last_event_at).unwrap_or(0) {
+                session.last_event_at = info.last_event_at.clone();
             }
             session.discovered = true;
             if info.pid.is_some() {
@@ -761,14 +840,84 @@ impl SessionManager {
             return NoteResult {
                 created,
                 skipped: false,
+                updated,
                 session: Some(session),
             };
         }
         NoteResult {
             created,
             skipped: false,
+            updated: false,
             session: None,
         }
+    }
+
+    /// Clear "working" when this session's process is gone, or when nothing
+    /// has happened for [`WORKING_STALE_MS`]. Hook transitions are left alone
+    /// here; callers pass file mtimes so a live transcript holds the status.
+    pub fn settle_working(
+        &self,
+        now_ms: i64,
+        live_pids: Option<&HashSet<u32>>,
+        file_times: &[FileActivity],
+    ) -> Vec<WorkingDowngrade> {
+        let mut files: HashMap<String, i64> = HashMap::new();
+        for file in file_times {
+            let key = display_key(&file.agent_type, &file.cwd, None);
+            files
+                .entry(key)
+                .and_modify(|prev| {
+                    if file.observed_ms > *prev {
+                        *prev = file.observed_ms;
+                    }
+                })
+                .or_insert(file.observed_ms);
+        }
+        let mut inner = self.inner.lock().expect("sessions");
+        let mut out = Vec::new();
+        for session in inner.sessions.values_mut() {
+            if session.status != "thinking" {
+                continue;
+            }
+            let waiting = session.pending_permission.is_some()
+                || session.pending_question.is_some()
+                || session.pending_plan.is_some();
+            if waiting {
+                continue;
+            }
+            let key = display_key(
+                &session.agent_type,
+                &session.cwd,
+                session.remote_host.as_deref(),
+            );
+            let file_ms = files.get(&key).copied().unwrap_or(0);
+            // Card creation stamps last_event_at with "now" before any hook.
+            // That is not activity. Hooked sessions use the hook time; everyone
+            // also honors the latest transcript/file mtime passed in.
+            let mut activity = session.status_at_ms.max(file_ms);
+            if session.hooked {
+                activity = activity.max(parse_millis(&session.last_event_at).unwrap_or(0));
+            }
+            let pid = session.live_pid.unwrap_or(0);
+            let pid_dead = pid != 0 && live_pids.is_some_and(|set| !set.contains(&pid));
+            let reason = if pid_dead {
+                format!("pid {pid} exited")
+            } else if live_pids.is_some() && now_ms.saturating_sub(activity) >= WORKING_STALE_MS {
+                format!("no hook or file activity for {}s", WORKING_STALE_MS / 1000)
+            } else {
+                continue;
+            };
+            apply_hook_status(session, "idle", now_ms);
+            session.last_tool = None;
+            session.last_event_at = now_iso();
+            out.push(WorkingDowngrade {
+                id: session.id.clone(),
+                name: session.name.clone(),
+                agent_type: session.agent_type.clone(),
+                reason,
+            });
+        }
+        out
     }
 
     pub fn reap(
@@ -819,6 +968,7 @@ impl SessionManager {
 
         let mut inner = self.inner.lock().expect("sessions");
         let id = Self::get_or_create(&mut inner, &payload);
+        let event_ms = Utc::now().timestamp_millis();
         let session = inner.sessions.get_mut(&id)?;
         session.hooked = true;
         session.last_event_at = now_iso();
@@ -866,12 +1016,12 @@ impl SessionManager {
         }
         match event_name.as_str() {
             "SessionStart" => {
-                session.status = "idle".into();
+                apply_hook_status(session, "idle", event_ms);
                 session.last_tool = None;
                 Self::cancel_idle(&self.idle_cancel, &id);
             }
             "UserPromptSubmit" => {
-                session.status = "thinking".into();
+                apply_hook_status(session, "thinking", event_ms);
                 session.last_tool = Some("prompt".into());
                 session.pending_question = None;
                 let sid = id.clone();
@@ -887,12 +1037,12 @@ impl SessionManager {
                 });
                 session.pending_question = None;
                 if session.pending_permission.is_none() {
-                    session.status = "thinking".into();
+                    apply_hook_status(session, "thinking", event_ms);
                 }
                 Self::cancel_idle(&self.idle_cancel, &id);
             }
             "PostToolUse" | "PostToolUseFailure" => {
-                session.status = "thinking".into();
+                apply_hook_status(session, "thinking", event_ms);
                 if !tool_name.is_empty() {
                     session.last_tool = Some(tool_name.clone());
                 }
@@ -917,7 +1067,7 @@ impl SessionManager {
                     && session.pending_question.is_none()
                     && session.pending_plan.is_none()
                 {
-                    session.status = "thinking".into();
+                    apply_hook_status(session, "thinking", event_ms);
                     if !tool_name.is_empty() {
                         session.last_tool = Some(tool_name);
                     } else if session.last_tool.is_none() {
@@ -931,7 +1081,7 @@ impl SessionManager {
             }
             "PermissionRequest" => {
                 Self::cancel_idle(&self.idle_cancel, &id);
-                session.status = "waiting".into();
+                apply_hook_status(session, "waiting", event_ms);
                 let message = str_field(&payload, "message");
                 let tool_input = payload.get("tool_input").cloned().unwrap_or(json!({}));
                 session.pending_permission = Some(PendingPermission {
@@ -958,7 +1108,7 @@ impl SessionManager {
                 let ntype_norm = ntype.to_lowercase();
                 if ntype_norm == "permission_prompt" || ntype_norm == "permission" {
                     Self::cancel_idle(&self.idle_cancel, &id);
-                    session.status = "waiting".into();
+                    apply_hook_status(session, "waiting", event_ms);
                     let title = str_field(&payload, "title");
                     session.pending_permission = Some(PendingPermission {
                         tool_name: if title.is_empty() {
@@ -972,7 +1122,7 @@ impl SessionManager {
                     });
                 } else if is_noise_idle_message(&msg, &ntype) || ntype_norm.contains("idle") {
                     Self::cancel_idle(&self.idle_cancel, &id);
-                    session.status = "idle".into();
+                    apply_hook_status(session, "idle", event_ms);
                     session.pending_question = None;
                     session.last_tool = None;
                 } else if matches!(
@@ -981,14 +1131,14 @@ impl SessionManager {
                 ) {
                     if !is_noise_idle_message(&msg, &ntype) {
                         Self::cancel_idle(&self.idle_cancel, &id);
-                        session.status = "waiting".into();
+                        apply_hook_status(session, "waiting", event_ms);
                         session.pending_question = Some(if msg.is_empty() {
                             "Agent needs a response".into()
                         } else {
                             msg
                         });
                     } else {
-                        session.status = "idle".into();
+                        apply_hook_status(session, "idle", event_ms);
                         session.pending_question = None;
                         session.last_tool = None;
                     }
@@ -997,12 +1147,12 @@ impl SessionManager {
             "Question" | "AskUser" => {
                 let msg = str_field(&payload, "message");
                 if is_noise_idle_message(&msg, "question") {
-                    session.status = "idle".into();
+                    apply_hook_status(session, "idle", event_ms);
                     session.pending_question = None;
                     session.last_tool = None;
                 } else {
                     Self::cancel_idle(&self.idle_cancel, &id);
-                    session.status = "waiting".into();
+                    apply_hook_status(session, "waiting", event_ms);
                     session.pending_question = Some(if msg.is_empty() {
                         "Agent needs a response".into()
                     } else {
@@ -1011,12 +1161,12 @@ impl SessionManager {
                 }
             }
             "SubagentStart" => {
-                session.status = "thinking".into();
+                apply_hook_status(session, "thinking", event_ms);
                 session.last_tool = Some("subagent".into());
                 Self::cancel_idle(&self.idle_cancel, &id);
             }
             "SubagentStop" => {
-                session.status = "thinking".into();
+                apply_hook_status(session, "thinking", event_ms);
                 session.last_tool = Some("subagent done".into());
                 let sid = id.clone();
                 drop(inner);
@@ -1025,14 +1175,14 @@ impl SessionManager {
             }
             "Stop" | "StopFailure" => {
                 Self::cancel_idle(&self.idle_cancel, &id);
-                session.status = "idle".into();
+                apply_hook_status(session, "idle", event_ms);
                 session.pending_permission = None;
                 session.pending_question = None;
                 session.last_tool = None;
             }
             "SessionEnd" => {
                 Self::cancel_idle(&self.idle_cancel, &id);
-                session.status = "disconnected".into();
+                apply_hook_status(session, "disconnected", event_ms);
                 session.pending_permission = None;
                 session.pending_question = None;
                 session.pending_plan = None;
@@ -1047,7 +1197,7 @@ impl SessionManager {
                 let plan_text = plan_text(&payload);
                 if plan_text.trim().len() > 8 {
                     Self::cancel_idle(&self.idle_cancel, &id);
-                    session.status = "waiting".into();
+                    apply_hook_status(session, "waiting", event_ms);
                     let title = str_field(&payload, "title");
                     session.pending_plan = Some(PendingPlan {
                         markdown: plan_text,
@@ -1087,7 +1237,7 @@ impl SessionManager {
                         });
                     if plan_text.len() > 40 {
                         Self::cancel_idle(&self.idle_cancel, &id);
-                        session.status = "waiting".into();
+                        apply_hook_status(session, "waiting", event_ms);
                         session.pending_plan = Some(PendingPlan {
                             markdown: plan_text,
                             title: if tool_name.is_empty() {
@@ -1155,7 +1305,7 @@ impl SessionManager {
             let mut inner = self.inner.lock().expect("sessions");
             if let Some(session) = inner.sessions.get_mut(session_id) {
                 session.pending_permission = None;
-                session.status = "thinking".into();
+                apply_hook_status(session, "thinking", Utc::now().timestamp_millis());
                 true
             } else {
                 false
@@ -1226,7 +1376,7 @@ impl SessionManager {
             {
                 let mut inner = self.inner.lock().expect("sessions");
                 if let Some(session) = inner.sessions.get_mut(session_id) {
-                    session.status = "thinking".into();
+                    apply_hook_status(session, "thinking", Utc::now().timestamp_millis());
                 }
             }
             self.schedule_idle(session_id);
@@ -1248,7 +1398,7 @@ impl SessionManager {
             {
                 let mut inner = self.inner.lock().expect("sessions");
                 if let Some(session) = inner.sessions.get_mut(session_id) {
-                    session.status = "thinking".into();
+                    apply_hook_status(session, "thinking", Utc::now().timestamp_millis());
                 }
             }
             self.schedule_idle(session_id);
@@ -1260,7 +1410,7 @@ impl SessionManager {
         {
             let mut inner = self.inner.lock().expect("sessions");
             if let Some(session) = inner.sessions.get_mut(session_id) {
-                session.status = "thinking".into();
+                apply_hook_status(session, "thinking", Utc::now().timestamp_millis());
                 session.last_tool = Some("reply sent".into());
                 session.pending_question = None;
             }
@@ -1772,5 +1922,119 @@ mod tests {
             .reap(None, None, Utc::now().timestamp_millis())
             .is_empty());
         assert_eq!(mgr.get_sessions().len(), 1);
+    }
+
+    fn iso_at(ms: i64) -> String {
+        DateTime::<Utc>::from(
+            std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms.max(0) as u64),
+        )
+        .to_rfc3339_opts(SecondsFormat::Millis, true)
+    }
+
+    #[test]
+    fn an_older_scan_does_not_overwrite_a_hook_idle() {
+        let mgr = mgr();
+        mgr.handle_event(&json!({
+            "hook_event_name": "UserPromptSubmit",
+            "agent_type": "claude-code",
+            "session_id": "s",
+            "cwd": "C:\\work\\app"
+        }));
+        let stopped = mgr
+            .handle_event(&json!({
+                "hook_event_name": "Stop",
+                "agent_type": "claude-code",
+                "session_id": "s",
+                "cwd": "C:\\work\\app"
+            }))
+            .unwrap();
+        assert_eq!(stopped.status, "idle");
+        let noted = mgr.note_discovered(&DiscoverInfo {
+            id: "live:claude-code:c:\\work\\app".into(),
+            agent_type: "claude-code".into(),
+            cwd: "C:\\work\\app".into(),
+            name: "app".into(),
+            pid: Some(4),
+            status: "thinking".into(),
+            last_event_at: "2020-01-01T00:00:00.000Z".into(),
+        });
+        assert!(!noted.updated);
+        assert_eq!(mgr.get_sessions()[0].status, "idle");
+
+        let future = Utc::now().timestamp_millis() + 60_000;
+        let revived = mgr.note_discovered(&DiscoverInfo {
+            id: "live:claude-code:c:\\work\\app".into(),
+            agent_type: "claude-code".into(),
+            cwd: "C:\\work\\app".into(),
+            name: "app".into(),
+            pid: Some(4),
+            status: "thinking".into(),
+            last_event_at: iso_at(future),
+        });
+        assert!(revived.updated);
+        assert_eq!(mgr.get_sessions()[0].status, "thinking");
+    }
+
+    #[test]
+    fn a_dead_pid_is_not_working() {
+        let mgr = mgr();
+        let now = Utc::now().timestamp_millis();
+        mgr.note_discovered(&DiscoverInfo {
+            id: "live:codex:c:\\work\\app".into(),
+            agent_type: "codex".into(),
+            cwd: "C:\\work\\app".into(),
+            name: "app".into(),
+            pid: Some(4),
+            status: "thinking".into(),
+            last_event_at: iso_at(now),
+        });
+        let live = HashSet::from([9]);
+        let fresh = [FileActivity {
+            agent_type: "codex".into(),
+            cwd: "C:\\work\\app".into(),
+            observed_ms: now,
+        }];
+        let downgraded = mgr.settle_working(now, Some(&live), &fresh);
+        assert_eq!(downgraded.len(), 1);
+        assert!(downgraded[0].reason.contains("pid 4 exited"));
+        assert_eq!(mgr.get_sessions()[0].status, "idle");
+    }
+
+    #[test]
+    fn quiet_working_downgrades_after_the_staleness_window() {
+        let mgr = mgr();
+        let now = Utc::now().timestamp_millis();
+        let old = now - WORKING_STALE_MS - 30_000;
+        mgr.note_discovered(&DiscoverInfo {
+            id: "live:grok-build:c:\\work\\app".into(),
+            agent_type: "grok-build".into(),
+            cwd: "C:\\work\\app".into(),
+            name: "app".into(),
+            pid: Some(8),
+            status: "thinking".into(),
+            last_event_at: iso_at(old),
+        });
+        let live = HashSet::from([8]);
+        let fresh = [FileActivity {
+            agent_type: "grok-build".into(),
+            cwd: "C:\\work\\app".into(),
+            observed_ms: now - 1_000,
+        }];
+        assert!(mgr.settle_working(now, Some(&live), &fresh).is_empty());
+        assert_eq!(mgr.get_sessions()[0].status, "thinking");
+
+        let quiet = [FileActivity {
+            agent_type: "grok-build".into(),
+            cwd: "C:\\work\\app".into(),
+            observed_ms: old,
+        }];
+        let downgraded = mgr.settle_working(now, Some(&live), &quiet);
+        assert_eq!(downgraded.len(), 1);
+        assert!(
+            downgraded[0].reason.contains("90s"),
+            "{}",
+            downgraded[0].reason
+        );
+        assert_eq!(mgr.get_sessions()[0].status, "idle");
     }
 }
