@@ -1,106 +1,173 @@
+<div align="center">
+
+<img src="assets/icons/128x128.png" width="96" height="96" alt="Winsur icon">
+
 # Winsur
 
-**Winsur** — multi-agent control surface for Windows.
-Run AI coding agents in the background; get interrupted only when they need you.
+**A small status bar at the top of your screen for the AI coding agents running on your PC.**
+See what each agent is doing, approve its commands, and jump to its terminal without hunting through windows.
 
-Inspired by [Vibe Island](https://vibeisland.app) (macOS). Built for Windows with Electron.
+[![Latest release](https://img.shields.io/github/v/release/suriya-z/winsur?label=release)](https://github.com/suriya-z/winsur/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4)](#requirements)
+[![License](https://img.shields.io/github/license/suriya-z/winsur)](LICENSE)
 
-<!-- TODO: screenshot / GIF of the island expanded with a permission card goes here -->
+### [Download Winsur for Windows](https://github.com/suriya-z/winsur/releases/latest/download/Winsur-Setup.exe)
 
-## Download
+One file, about a minute to set up. Windows 10 or 11, 64-bit.
 
-**[Download the latest release →](https://github.com/suriya-z/winsur/releases/latest)**
+</div>
 
-| File | Use |
-|------|-----|
-| `Winsur-Setup-*.exe` | Installer — adds Start Menu and desktop shortcuts |
-| `Winsur-Portable-*.exe` | Single executable, no install |
+---
 
-Windows 10/11, x64. You do not need to clone this repo or install Node to use
-Winsur — the source is here to read, fork and contribute to.
+## Why Winsur
 
-### The installer is unsigned
+When you run Claude Code, Codex or Cursor in the background, you only find out an
+agent stopped to ask a question when you go back and look. Winsur watches every
+agent for you and shows one line at the top of the screen:
 
-Winsur is not code-signed yet, so Windows will show
-**"Windows protected your PC"** with an unknown publisher. To continue, click
-**More info**, then **Run anyway**. This is expected for unsigned open-source
-software; the alternative is a paid certificate. If you would rather not
-click through that, build from source instead (below) — same result.
+- **Which agents are working, waiting or done**, one dot per agent.
+- **What an agent wants to run**, with Allow and Deny buttons, before it runs.
+- **Questions and plans**, which you can answer from the bar.
+- **A sound and a Windows notification** when an agent needs you.
 
-## What it does
+Click an agent to bring its terminal window to the front.
 
-- Zero-config hooks for many agents (Claude, Codex, Grok Build, Cursor, …)
-- Permission Allow / Deny, optional terminal reply, window jump
-- Plan review (Markdown + approve / feedback)
-- Sound alerts, usage panel, SSH reverse tunnels
-- Fully local — hook server on `127.0.0.1:18900`
+## Install
 
-## Permissions
+1. [Download `Winsur-Setup.exe`](https://github.com/suriya-z/winsur/releases/latest/download/Winsur-Setup.exe).
+2. Open it. Windows may say **"Windows protected your PC"** because the installer is
+   not code-signed yet. Click **More info**, then **Run anyway**.
+3. Winsur installs for your user account (no admin rights needed), starts, and
+   appears at the top of the screen.
 
-`Bash`, `Write`, `Edit` and `NotebookEdit` are held until you answer;
-the agent waits up to 5 minutes, then denies. Everything else is
-reported for display and falls through to the agent's own permission
-prompt.
+On first start, Winsur finds the agents installed on your PC and connects to them.
+Restart any agent that was already running so it picks up the connection.
 
-Holding a tool call requires knowing how a given agent reads a hook's
-decision, so gating is currently enabled for Claude Code only. Other
-agents show activity, questions and plans, but Winsur does not decide
-for them. To gate another host, add it in `electron/hooks.cjs`
-(`GATED_TOOLS`, and the `gate` flag in `installAllHooks`).
+To remove Winsur, use **Settings > Apps > Installed apps > Winsur > Uninstall**.
 
-## What Winsur touches on your machine
+## How it works
 
-Worth knowing before you run it:
+```mermaid
+flowchart LR
+    A["Coding agent<br/>(Claude Code, Codex, Cursor, ...)"] -- "hook event" --> S["Winsur<br/>127.0.0.1:18900"]
+    S -- "status, prompt" --> U["Bar at the top<br/>of your screen"]
+    U -- "Allow / Deny" --> S
+    S -- "decision" --> A
+```
 
-- **It edits your agents' config files.** On launch Winsur installs its hooks
-  into the settings of every agent it detects — for example
-  `~/.claude/settings.json` and `~/.grok/hooks/winsur.json`. Existing hooks are
-  preserved; only Winsur's own entries are rewritten. See `electron/hooks.cjs`.
-- **It runs a local HTTP server** on `127.0.0.1:18900` to receive hook events.
-  It binds to loopback only and sends no CORS headers, so a web page you visit
-  cannot read from it.
-- **Nothing leaves your machine.** There is no telemetry and no remote endpoint.
-  Agent activity stays in memory and in `~/.winsur\`.
-- **It can focus windows and send keystrokes.** "Jump to terminal" and terminal
-  replies use PowerShell and Win32 calls to target the agent's window. See
-  `hooks\` and the focus logic in `electron/`.
+Most coding agents can run a small script or send a web request at key moments:
+before a tool runs, when they need input, when they finish. Winsur adds itself to
+those **hooks** and listens on your own machine. Nothing goes over the internet.
+
+## Approving commands
+
+For Claude Code, Winsur holds `Bash`, `Write`, `Edit` and `NotebookEdit` until you
+answer:
+
+| Action | Mouse | Keyboard |
+|--------|-------|----------|
+| Allow the oldest waiting request | **Allow** | `Enter` |
+| Deny it | **Deny** | `Esc` |
+
+The keyboard shortcuts work while the Winsur bar has focus. If you don't answer
+within 5 minutes, the request is denied. If you cancel the
+agent first, the request disappears from the bar.
+
+Other agents show their activity, questions and plans, but keep their own approval
+prompts. Holding a request requires knowing exactly how each agent reads the answer,
+and that is only confirmed for Claude Code so far.
+
+## Supported agents
+
+Winsur connects to an agent when it finds its settings folder or program on your PC.
+
+| Agent | Status and notifications | Approve from Winsur |
+|-------|:---:|:---:|
+| Claude Code | Yes | Yes |
+| Codex CLI | Yes | No |
+| Cursor | Yes | No |
+| Grok Build | Yes | No |
+| OpenCode | Yes | No |
+| Antigravity | Yes | No |
+| Hermes | Yes | No |
+| Gemini CLI, Windsurf, Qwen Code, Kimi Code, GitHub Copilot, Amp, Kiro and others | Best effort | No |
+
+The full list, with the config file each one uses, is in
+[`electron/agents-registry.cjs`](electron/agents-registry.cjs).
+
+## Privacy and security
+
+Winsur runs entirely on your PC. Here is everything it does outside its own window:
+
+- **Edits your agents' settings files** to add its hooks, for example
+  `~/.claude/settings.json`. Your own hooks and settings stay as they are. If a
+  settings file contains comments or anything else that isn't plain JSON, Winsur
+  leaves that file alone and skips that agent.
+- **Runs a local server on `127.0.0.1:18900`** to receive hook events. Only
+  programs on your PC can reach it. It accepts JSON requests only and checks the
+  `Host` header, so a website you visit cannot send it fake events.
+- **Focuses windows and types replies** when you click an agent or answer a
+  question from the bar. It only types into the window it matched to that agent;
+  if it can't find one, it tells you and types nothing.
+- **Stores its settings** in `%USERPROFILE%\.winsur\`.
+- **Sends nothing anywhere.** No telemetry, no accounts, no update checks.
+
+## Requirements
+
+- Windows 10 or 11, 64-bit
+- At least one supported coding agent
+- Windows PowerShell 5.1, which ships with Windows
 
 ## Build from source
 
+You need Node.js 22 or newer.
+
 ```powershell
+git clone https://github.com/suriya-z/winsur.git
+cd winsur
 npm install
 npm start
 ```
 
-Build the installers yourself:
+| Command | What it does |
+|---------|--------------|
+| `npm start` | Run in development mode with live reload |
+| `npm test` | Run the test suite |
+| `npm run lint` | Check code style |
+| `npm run dist` | Build `release\Winsur-Setup.exe` |
+| `npm run free` | Free ports 1420 and 18900 if a previous run is stuck |
+
+### Project layout
+
+| Path | Contents |
+|------|----------|
+| `electron/` | Main process: hook server, agent sessions, hook installer, window focus |
+| `src/` | The bar and its panels (React) |
+| `hooks/` | PowerShell script that agents call |
+| `test/` | Tests, run with `npm test` |
+
+## Releasing
+
+Push a version tag that matches `package.json`:
 
 ```powershell
-npm run dist
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
-Output lands in `release\`.
-
-| Command | What |
-|---------|------|
-| `npm start` | Dev mode |
-| `npm run free` | Free ports 1420 / 18900 |
-| `npm run restart` | Free ports + start |
-| `npm run dist` | Build Windows installers |
-| `npm run lint` | ESLint |
-
-## Config
-
-| Path | Role |
-|------|------|
-| `hooks\` | Hook scripts (source of truth) |
-| `~/.winsur\` | Settings, SSH remotes |
-| `~/.grok\hooks\winsur.json` | Generated Grok hooks |
+GitHub Actions builds `Winsur-Setup.exe` and publishes it as the latest release.
+The download link above always points to that newest file.
 
 ## Contributing
 
-Issues and pull requests welcome. Winsur is Windows-only by design, so please
-test on Windows 10 or 11. Run `npm run lint` and `npx tsc -b` before opening a
-PR — both must be clean.
+Bug reports and pull requests are welcome. Winsur is Windows-only, so please test
+on Windows 10 or 11. Before opening a pull request, run:
+
+```powershell
+npm test
+npm run lint
+npx tsc -b
+```
 
 ## License
 

@@ -1,7 +1,7 @@
 {
   "name": "winsur",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Winsur — multi-agent control surface for Windows",
   "author": "Suriya",
   "license": "MIT",
@@ -74,7 +74,8 @@
       {
         "provider": "github",
         "owner": "suriya-z",
-        "repo": "winsur"
+        "repo": "winsur",
+        "releaseType": "release"
       }
     ],
     "files": [
@@ -96,26 +97,17 @@
           "arch": [
             "x64"
           ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
         }
       ],
       "icon": "build/icon.png",
-      "artifactName": "${productName}-Setup-${version}.${ext}"
+      "artifactName": "${productName}-Setup.${ext}"
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
+      "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Winsur"
-    },
-    "portable": {
-      "artifactName": "${productName}-Portable-${version}.${ext}"
     }
   }
 }
