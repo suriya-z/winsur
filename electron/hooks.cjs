@@ -86,10 +86,27 @@ function isDetected(host) {
   return false;
 }
 
+/**
+ * Read an agent's JSON config. Missing file → {}. A file we cannot parse
+ * (comments, trailing commas) throws, so the caller skips that agent rather
+ * than overwriting the user's settings with only our hooks.
+ */
+function readJsonConfig(configPath) {
+  if (!fs.existsSync(configPath)) return {};
+  const raw = fs.readFileSync(configPath, "utf8").replace(/^\uFEFF/, "");
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`${configPath} is not plain JSON (${e.message}); left unchanged`);
+  }
+}
+
 function hookCommand(scriptPath, eventName, hostTypeId) {
   const suffix = hostTypeId ? ` ${hostTypeId}` : "";
   if (scriptPath.includes(" ")) {
-    return `powershell -ExecutionPolicy Bypass -NoProfile -Command "& '${scriptPath}' ${eventName}${suffix}"`;
+    const quoted = scriptPath.replace(/'/g, "''");
+    return `powershell -ExecutionPolicy Bypass -NoProfile -Command "& '${quoted}' ${eventName}${suffix}"`;
   }
   return `powershell -ExecutionPolicy Bypass -NoProfile -File ${scriptPath} ${eventName}${suffix}`;
 }
@@ -211,14 +228,7 @@ function installGrokHooks(configPath) {
 
 function installCursorHooks(configPath, hookScript) {
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  let existing = {};
-  if (fs.existsSync(configPath)) {
-    try {
-      existing = JSON.parse(fs.readFileSync(configPath, "utf8") || "{}");
-    } catch {
-      existing = {};
-    }
-  }
+  const existing = readJsonConfig(configPath);
   // Cursor often uses top-level event keys or hooks object
   const commandHooks = buildCommandHooks(hookScript, "cursor");
   if (!existing.hooks) existing.hooks = {};
@@ -230,14 +240,7 @@ function installCursorHooks(configPath, hookScript) {
 
 function installCodexHooks(configPath, hookScript) {
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  let existing = {};
-  if (fs.existsSync(configPath)) {
-    try {
-      existing = JSON.parse(fs.readFileSync(configPath, "utf8") || "{}");
-    } catch {
-      existing = {};
-    }
-  }
+  const existing = readJsonConfig(configPath);
   if (!existing.hooks || typeof existing.hooks !== "object") {
     existing.hooks = {};
   }
@@ -268,14 +271,7 @@ function installCodexHooks(configPath, hookScript) {
 
 function installAntigravityHooks(configPath, hookScript) {
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  let existing = {};
-  if (fs.existsSync(configPath)) {
-    try {
-      existing = JSON.parse(fs.readFileSync(configPath, "utf8") || "{}");
-    } catch {
-      existing = {};
-    }
-  }
+  const existing = readJsonConfig(configPath);
   const cmd = (ev) => hookCommand(hookScript, ev, "antigravity");
   existing.winsur = {
     PreToolUse: [
@@ -625,16 +621,8 @@ function uninstallHermesHooks(pluginInitPath) {
 }
 
 function installHooksToConfig(configPath, hookScript, hooksKey, preferHttp, gate, hostTypeId) {
-  let settings = {};
-  if (fs.existsSync(configPath)) {
-    try {
-      settings = JSON.parse(fs.readFileSync(configPath, "utf8") || "{}");
-    } catch {
-      settings = {};
-    }
-  } else {
-    fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  }
+  const settings = readJsonConfig(configPath);
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
 
   const hooks = preferHttp
     ? buildHttpHooks(gate)
@@ -810,4 +798,6 @@ module.exports = {
   autoInstallOnLaunch,
   buildHttpHooks,
   stripWinsurHooks,
+  installHooksToConfig,
+  hookCommand,
 };

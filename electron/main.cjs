@@ -75,19 +75,6 @@ async function restoreIsland({ focus = true } = {}) {
   }
 }
 
-function resolveSession(sessionManager, sessionId) {
-  let session = sessionManager.getSessions().find((s) => s.id === sessionId);
-  if (session) return session;
-  session = sessionManager.getSessions().find(
-    (s) =>
-      (sessionId && String(s.id).includes(String(sessionId))) ||
-      s.agent_type === "grok-build"
-  );
-  if (session) return session;
-  const all = sessionManager.getSessions();
-  return all[0] || null;
-}
-
 function createWindow() {
   const { width: screenW } = screen.getPrimaryDisplay().workAreaSize;
   const winW = 500;
@@ -276,7 +263,7 @@ function wireIpc(sessionManager) {
       }
 
       case "focus_terminal": {
-        const session = resolveSession(sessionManager, args.sessionId);
+        const session = sessionManager.findSession(args.sessionId);
         if (!session) return { ok: false, detail: "session not found" };
 
         await releaseIslandForInput();
@@ -359,7 +346,7 @@ function wireIpc(sessionManager) {
         return sshRemote.getRemoteDeployScript();
 
       case "respond_plan": {
-        const session = resolveSession(sessionManager, args.sessionId);
+        const session = sessionManager.findSession(args.sessionId);
         if (!session) return { ok: false, detail: "session not found" };
         const decision = args.decision;
         let message = args.message || "";
@@ -411,7 +398,7 @@ function wireIpc(sessionManager) {
         return null;
 
       case "reply_question": {
-        const session = resolveSession(sessionManager, args.sessionId);
+        const session = sessionManager.findSession(args.sessionId);
         if (!session) return { ok: false, detail: "no active agent session" };
 
         const msg = String(args.message || "").trim();

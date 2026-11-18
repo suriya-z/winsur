@@ -77,6 +77,7 @@ function connectRemote(id) {
     "ExitOnForwardFailure=yes",
     "-R",
     `${remotePort}:127.0.0.1:18900`,
+    "--", // a host value can never be read as an ssh option
     r.host,
   ];
 
@@ -86,8 +87,15 @@ function connectRemote(id) {
   });
 
   tunnels.set(id, child);
-  child.on("exit", () => {
-    tunnels.delete(id);
+  const drop = () => {
+    if (tunnels.get(id) === child) tunnels.delete(id);
+  };
+  child.on("exit", drop);
+  // Without a listener, ENOENT (no ssh on PATH) is an uncaught error that
+  // takes down the whole main process.
+  child.on("error", (err) => {
+    console.warn(`[ssh:${id}] ${err.message}`);
+    drop();
   });
   child.stderr?.on("data", (d) => {
     console.log(`[ssh:${id}]`, String(d).trim());
@@ -114,6 +122,10 @@ function disconnectAll() {
 }
 
 function addRemote(remote) {
+  const host = String(remote.host || "").trim();
+  if (!host || host.startsWith("-") || /\s/.test(host)) {
+    throw new Error("Invalid host: use user@hostname");
+  }
   const remotes = loadRemotes();
   const id =
     remote.id ||

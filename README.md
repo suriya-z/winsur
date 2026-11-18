@@ -9,7 +9,7 @@ Inspired by [Vibe Island](https://vibeisland.app) (macOS). Built for Windows wit
 
 ## Download
 
-**[Download the latest release →](https://github.com/summerchaserwwz/winsur/releases/latest)**
+**[Download the latest release →](https://github.com/suriya-z/winsur/releases/latest)**
 
 | File | Use |
 |------|-----|
@@ -104,4 +104,4 @@ PR — both must be clean.
 
 ## License
 
-[MIT](LICENSE) © 2026 wwz
+[MIT](LICENSE)

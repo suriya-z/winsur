@@ -3,15 +3,15 @@
   "private": true,
   "version": "0.1.1",
   "description": "Winsur — multi-agent control surface for Windows",
-  "author": "wwz",
+  "author": "Suriya",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/summerchaserwwz/winsur.git"
+    "url": "git+https://github.com/suriya-z/winsur.git"
   },
-  "homepage": "https://github.com/summerchaserwwz/winsur",
+  "homepage": "https://github.com/suriya-z/winsur",
   "bugs": {
-    "url": "https://github.com/summerchaserwwz/winsur/issues"
+    "url": "https://github.com/suriya-z/winsur/issues"
   },
   "type": "module",
   "main": "electron/main.cjs",
@@ -19,6 +19,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test": "node --test \"test/**/*.test.cjs\"",
     "preview": "vite preview",
     "electron:dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:1420 && electron .\"",
     "electron:start": "electron .",
@@ -65,14 +66,14 @@
   "build": {
     "appId": "com.winsur.app",
     "productName": "Winsur",
-    "copyright": "Copyright © 2026 wwz",
+    "copyright": "Copyright © 2026 Suriya",
     "directories": {
       "output": "release"
     },
     "publish": [
       {
         "provider": "github",
-        "owner": "summerchaserwwz",
+        "owner": "suriya-z",
         "repo": "winsur"
       }
     ],

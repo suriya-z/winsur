@@ -237,7 +237,13 @@ function describeToolInput(toolInput) {
 class SessionManager {
   constructor() {
     this.sessions = new Map();
-    this.permissionWaiters = new Map();
+    /**
+     * session id → queue of held permission requests, oldest first.
+     * One card can hold several (parallel tool calls, or two terminals in the
+     * same folder), so each request gets its own entry and its own answer.
+     * @type {Map<string, Array<{ perm: object, settle: (decision: string) => void }>>}
+     */
+    this.permissionQueues = new Map();
     /** displayKey → session id */
     this.displayIndex = new Map();
     /** session id → timeout handle for auto-idle */
@@ -406,12 +412,15 @@ class SessionManager {
       case "PermissionRequest":
         this.cancelIdle(session.id);
         session.status = "waiting";
-        session.pending_permission = {
-          tool_name: payload.tool_name || "",
-          tool_input: payload.tool_input || {},
-          description: payload.message || describeToolInput(payload.tool_input),
-          timestamp: nowIso(),
-        };
+        // A held request already on the card stays on top until it is answered.
+        if (!this.permissionQueues.get(session.id)?.length) {
+          session.pending_permission = {
+            tool_name: payload.tool_name || "",
+            tool_input: payload.tool_input || {},
+            description: payload.message || describeToolInput(payload.tool_input),
+            timestamp: nowIso(),
+          };
+        }
         break;
 
       case "Notification": {
@@ -489,6 +498,11 @@ class SessionManager {
       case "StopFailure":
         this.cancelIdle(session.id);
         session.status = "idle";
+        // Another terminal merged into this card may still be held on a request.
+        if (this.permissionQueues.get(session.id)?.length) {
+          this.refreshPermission(session.id);
+          break;
+        }
         session.pending_permission = null;
         session.pending_question = null;
         session.last_tool = null;
@@ -570,42 +584,97 @@ class SessionManager {
       );
   }
 
+  /** Exact id lookup. Never falls back to another card. */
+  findSession(sessionId) {
+    const s = this.sessions.get(sessionId);
+    return s && s.status !== "disconnected" ? { ...s } : null;
+  }
+
+  /**
+   * Raise a permission card for a blocking hook call and hold it until the
+   * user answers, the timeout passes ("deny"), or `signal` aborts ("cancel").
+   * @returns {{ session: object, decision: Promise<"allow"|"deny"|"cancel"> }}
+   */
+  holdPermission(payload, timeoutMs = 300000, signal) {
+    const session = this.handleEvent({ ...payload, hook_event_name: "PermissionRequest" });
+    const p = normalizeHookPayload(payload);
+    const perm = {
+      tool_name: p.tool_name || "",
+      tool_input: p.tool_input || {},
+      description: p.message || describeToolInput(p.tool_input),
+      timestamp: nowIso(),
+    };
+
+    let queue = this.permissionQueues.get(session.id);
+    if (!queue) {
+      queue = [];
+      this.permissionQueues.set(session.id, queue);
+    }
+
+    const decision = new Promise((resolve) => {
+      let timeout = null;
+      const onAbort = () => entry.settle("cancel");
+      const entry = {
+        perm,
+        settle: (d) => {
+          const i = queue.indexOf(entry);
+          if (i < 0) return; // already settled
+          queue.splice(i, 1);
+          clearTimeout(timeout);
+          signal?.removeEventListener("abort", onAbort);
+          this.refreshPermission(session.id);
+          resolve(d);
+        },
+      };
+      queue.push(entry);
+      timeout = setTimeout(() => entry.settle("deny"), timeoutMs);
+      timeout.unref?.();
+      if (signal?.aborted) entry.settle("cancel");
+      else signal?.addEventListener("abort", onAbort);
+    });
+
+    this.refreshPermission(session.id);
+    return { session: this.findSession(session.id) || session, decision };
+  }
+
+  /** Show the oldest held request on the card, or clear the card when none remain. */
+  refreshPermission(sessionId) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    const head = this.permissionQueues.get(sessionId)?.[0];
+    if (head) {
+      this.cancelIdle(sessionId);
+      session.pending_permission = head.perm;
+      session.status = "waiting";
+      return;
+    }
+    session.pending_permission = null;
+    if (session.status === "waiting" && !session.pending_question && !session.pending_plan) {
+      session.status = "thinking";
+      this.scheduleIdle(sessionId);
+    }
+  }
+
+  /** Answer the request shown on the card. True if a held hook call received it. */
   respondPermission(sessionId, decision) {
+    const head = this.permissionQueues.get(sessionId)?.[0];
+    if (head) {
+      head.settle(decision);
+      return true;
+    }
+    // Display-only card (a host that reports prompts but is not held here).
     const session = this.sessions.get(sessionId);
     if (session) {
       session.pending_permission = null;
       session.status = "thinking";
       this.scheduleIdle(sessionId);
     }
-    const waiter = this.permissionWaiters.get(sessionId);
-    if (waiter) {
-      waiter.resolve(decision);
-      return true;
-    }
     return false;
   }
 
-  waitPermission(sessionId, timeoutMs = 300000) {
-    return new Promise((resolve) => {
-      const prev = this.permissionWaiters.get(sessionId);
-      if (prev) {
-        clearTimeout(prev.timeout);
-        prev.resolve("deny");
-      }
-      const timeout = setTimeout(() => {
-        this.permissionWaiters.delete(sessionId);
-        this.respondPermission(sessionId, "deny");
-        resolve("deny");
-      }, timeoutMs);
-      this.permissionWaiters.set(sessionId, {
-        resolve: (decision) => {
-          clearTimeout(timeout);
-          this.permissionWaiters.delete(sessionId);
-          resolve(decision);
-        },
-        timeout,
-      });
-    });
+  denyAllPermissions(sessionId) {
+    for (const entry of [...(this.permissionQueues.get(sessionId) || [])]) entry.settle("deny");
+    this.permissionQueues.delete(sessionId);
   }
 
   clearQuestion(sessionId) {
@@ -634,23 +703,15 @@ class SessionManager {
     if (s) {
       this.displayIndex.delete(displayKey(s.agent_type, s.cwd, s.remote_host));
     }
+    this.denyAllPermissions(sessionId);
     this.sessions.delete(sessionId);
-    const waiter = this.permissionWaiters.get(sessionId);
-    if (waiter) waiter.resolve("deny");
   }
 
   clearAll() {
     for (const id of [...this.idleTimers.keys()]) this.cancelIdle(id);
+    for (const id of [...this.permissionQueues.keys()]) this.denyAllPermissions(id);
     this.sessions.clear();
     this.displayIndex.clear();
-    for (const [, w] of this.permissionWaiters) {
-      try {
-        w.resolve("deny");
-      } catch {
-        /* ignore */
-      }
-    }
-    this.permissionWaiters.clear();
   }
 }
 

@@ -66,12 +66,22 @@ function buildNeedleList(cwd, name, agentType) {
   ];
 }
 
+/**
+ * PowerShell single-quoted literal. PowerShell also ends a single-quoted
+ * string on the curly quotes, so those are doubled too.
+ */
+function psQuote(value) {
+  return `'${String(value).replace(/['\u2018\u2019\u201A\u201B]/g, "$&$&")}'`;
+}
+
 async function runPsFile(scriptBody) {
   const file = path.join(
     os.tmpdir(),
     `winsur-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.ps1`
   );
-  fs.writeFileSync(file, scriptBody, "utf8");
+  // BOM: powershell.exe 5.1 reads a BOM-less file as ANSI, which mangles
+  // non-ASCII folder names and can turn their bytes into quote characters.
+  fs.writeFileSync(file, "\uFEFF" + scriptBody, "utf8");
   try {
     const { stdout, stderr } = await execFileAsync(
       "powershell.exe",
@@ -282,7 +292,12 @@ public class WinsurWin {
 }
 `;
 
-function scoreAndPickPs(needlesPs, preferAgent) {
+/**
+ * @param {{ allowAnyConsole?: boolean }} opts  allowAnyConsole: when nothing
+ *   matches, fall back to any console window. Fine for a jump; never for a
+ *   send, which would paste the message into an unrelated shell and run it.
+ */
+function scoreAndPickPs(needlesPs, preferAgent, { allowAnyConsole = false } = {}) {
   const prefer = String(preferAgent || "").replace(/'/g, "");
   return `
 $needles = @(${needlesPs})
@@ -359,7 +374,17 @@ foreach ($w in $wins) {
     }
   }
 }
+${allowAnyConsole ? anyConsoleFallbackPs() : ""}
+$script:Best = $scored | Sort-Object Score -Descending | Select-Object -First 1
+$script:AgentPid = $agentPid
+$script:Top3 = ($scored | Sort-Object Score -Descending | Select-Object -First 3 |
+  ForEach-Object { "$($_.Score):$($_.Proc):$($_.Title)" }) -join ' || '
+$script:WinCount = $wins.Count
+`;
+}
 
+function anyConsoleFallbackPs() {
+  return `
 # Last-resort: any Cascadia/console window
 if ($scored.Count -eq 0) {
   foreach ($w in $wins) {
@@ -377,12 +402,6 @@ if ($scored.Count -eq 0) {
     }
   }
 }
-
-$script:Best = $scored | Sort-Object Score -Descending | Select-Object -First 1
-$script:AgentPid = $agentPid
-$script:Top3 = ($scored | Sort-Object Score -Descending | Select-Object -First 3 |
-  ForEach-Object { "$($_.Score):$($_.Proc):$($_.Title)" }) -join ' || '
-$script:WinCount = $wins.Count
 `;
 }
 
@@ -413,7 +432,7 @@ async function sendTextToWindow(cwd, name, agentType, message) {
   if (!text.trim()) return { ok: false, detail: "empty message", background: false };
 
   const needles = buildNeedleList(cwd, name, agentType);
-  const needlesPs = needles.map((n) => `'${String(n).replace(/'/g, "''")}'`).join(", ");
+  const needlesPs = needles.map(psQuote).join(", ");
   const b64 = Buffer.from(text, "utf16le").toString("base64");
   const prefer = preferName(agentType);
 
@@ -493,13 +512,13 @@ exit 0
 
 async function focusTerminal(cwd, name, agentType) {
   const needles = buildNeedleList(cwd, name, agentType);
-  const needlesPs = needles.map((n) => `'${String(n).replace(/'/g, "''")}'`).join(", ");
+  const needlesPs = needles.map(psQuote).join(", ");
   const prefer = preferName(agentType);
 
   const script = `
 $ErrorActionPreference = 'Continue'
 ${addTypeBlock()}
-${scoreAndPickPs(needlesPs, prefer)}
+${scoreAndPickPs(needlesPs, prefer, { allowAnyConsole: true })}
 if (-not $Best) {
   $alive = @(Get-Process -Name grok,claude,codex -ErrorAction SilentlyContinue)
   if ($alive.Count -eq 0) { Write-Output 'FAIL|AGENT_EXITED'; exit 1 }
@@ -535,4 +554,7 @@ module.exports = {
   sendTextToWindow,
   focusWindowByKeywords,
   agentKeywords,
+  psQuote,
+  runPsFile,
+  scoreAndPickPs,
 };
