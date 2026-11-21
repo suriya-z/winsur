@@ -4,7 +4,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { execSync } = require("child_process");
-const { installHooksToConfig, hookCommand } = require("../electron/hooks.cjs");
+const { installHooksToConfig, hookCommand, getHookScriptPath } = require("../electron/hooks.cjs");
 
 function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "winsur-hooks-"));
@@ -48,4 +48,17 @@ test("hookCommand runs a script whose path contains an apostrophe and a space", 
   execSync(hookCommand(script, "Stop"), { stdio: "ignore" });
 
   assert.equal(fs.readFileSync(marker, "utf8").trim(), "Stop");
+});
+
+
+test("an installed app points hooks at its own resources folder, not the dev checkout", (t) => {
+  const resources = tempDir();
+  fs.mkdirSync(path.join(resources, "hooks"));
+  fs.writeFileSync(path.join(resources, "hooks", "winsur-hook.ps1"), "", "utf8");
+
+  const saved = process.resourcesPath;
+  process.resourcesPath = resources;
+  t.after(() => { process.resourcesPath = saved; });
+
+  assert.equal(getHookScriptPath(), path.join(resources, "hooks", "winsur-hook.ps1"));
 });
