@@ -1,12 +1,13 @@
 // Electron main process — Winsur (no Rust / no C++ toolchain)
 
-const { app, BrowserWindow, Tray, Menu, nativeImage, Notification, ipcMain, screen } = require("electron");
+const { app, BrowserWindow, Tray, Menu, nativeImage, Notification, ipcMain, screen, shell } = require("electron");
 const path = require("path");
 const { createHookServer } = require("./server.cjs");
 const { installAllHooks, uninstallAllHooks, checkHooksStatus, autoInstallOnLaunch } = require("./hooks.cjs");
 const { focusTerminal, sendTextToWindow } = require("./window.cjs");
 const { collectUsage } = require("./usage.cjs");
 const sshRemote = require("./ssh-remote.cjs");
+const { guardNavigation } = require("./navigation.cjs");
 const fs = require("fs");
 
 const isDev = !app.isPackaged;
@@ -114,6 +115,10 @@ function createWindow() {
   try {
     mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   } catch {}
+
+  guardNavigation(mainWindow.webContents, (url) => {
+    shell.openExternal(url).catch(() => {});
+  });
 
   mainWindow.webContents.on("did-finish-load", () => {
     console.log("[Winsur] webContents did-finish-load");

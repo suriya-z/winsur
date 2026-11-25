@@ -1,7 +1,7 @@
 {
   "name": "winsur",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Winsur — multi-agent control surface for Windows",
   "author": "Suriya",
   "license": "MIT",
