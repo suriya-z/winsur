@@ -112,11 +112,14 @@ hook docs.
 ## How it works
 
 ```mermaid
-flowchart LR
-    A["Your coding agents<br/>Claude Code, Codex, Cursor, ..."] -- "hook events" --> W["Winsur<br/>127.0.0.1:18900"]
-    W -- "status, commands, plans" --> N["The notch"]
-    N -- "Allow / Deny" --> W
-    W -- "your decision" --> A
+flowchart TB
+    A["Coding agents<br/>Claude Code, Codex, Cursor, ..."]
+    W["Winsur on your PC<br/>127.0.0.1:18900"]
+    N["The notch"]
+    A -->|"1. hook event"| W
+    W -->|"2. shows a card"| N
+    N -->|"3. you click Allow"| W
+    W -->|"4. agent continues"| A
 ```
 
 Modern coding agents can call a script or send a request at key moments: before running
