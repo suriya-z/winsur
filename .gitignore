@@ -40,3 +40,5 @@ Desktop.ini
 *.pdb
 release-check/
 dist-release/
+test/e2e/artifacts/
+test/live/results/
