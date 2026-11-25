@@ -18,7 +18,7 @@ function fakeHome() {
   return home;
 }
 
-async function launchApp(t, { waitServer = true } = {}) {
+async function launchApp(t, { waitServer = true, electronArgs = [] } = {}) {
   const home = fakeHome();
   const env = {
     ...process.env,
@@ -30,7 +30,7 @@ async function launchApp(t, { waitServer = true } = {}) {
   };
   for (const k of Object.keys(env)) if (/^(CLAUDE|ANTHROPIC)/.test(k)) delete env[k];
 
-  const app = await _electron.launch({ args: ["."], cwd: ROOT, env, timeout: 30000 });
+  const app = await _electron.launch({ args: [...electronArgs, "."], cwd: ROOT, env, timeout: 30000 });
   const logs = [];
   app.process().stdout?.on("data", (c) => logs.push(String(c)));
   app.process().stderr?.on("data", (c) => logs.push(String(c)));
