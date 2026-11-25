@@ -104,6 +104,8 @@ async function main() {
     });
     await record(2400);
     await win.getByText("git push origin main").waitFor();
+    // GitHub shows a GIF's first frame until it plays, so start the loop here.
+    const heroFrame = n;
     await shotIsland("permission.png");
     await win.getByRole("button", { name: /Allow/ }).hover();
     await record(900);
@@ -112,15 +114,25 @@ async function main() {
     await record(1800);
     const seconds = (Date.now() - started) / 1000;
 
+    const looped = fs.mkdtempSync(path.join(os.tmpdir(), "winsur-loop-"));
+    for (let i = 0; i < n; i++) {
+      const src = (heroFrame + i) % n;
+      fs.renameSync(
+        path.join(frames, `f${String(src).padStart(4, "0")}.png`),
+        path.join(looped, `f${String(i).padStart(4, "0")}.png`),
+      );
+    }
+
     const gif = path.join(OUT, "demo.gif");
     execFileSync("ffmpeg", [
       "-y", "-loglevel", "error",
       "-framerate", (n / seconds).toFixed(2),
-      "-i", path.join(frames, "f%04d.png"),
+      "-i", path.join(looped, "f%04d.png"),
       "-vf", "fps=15,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=4",
       gif,
     ]);
     fs.rmSync(frames, { recursive: true, force: true });
+    fs.rmSync(looped, { recursive: true, force: true });
     console.log(`frames=${n} seconds=${seconds.toFixed(1)}`);
     for (const f of fs.readdirSync(OUT)) console.log(f, fs.statSync(path.join(OUT, f)).size);
   } finally {
